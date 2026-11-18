@@ -274,7 +274,10 @@ class SyncManager(
             return
         }
 
-        if (syncOptions.categories) {
+        // Only a v2 response carries the complete live category list. A v1 backup may omit
+        // categories because of its own backup options, so treating an absent category as
+        // deleted there would wipe local categories that the remote simply never carried.
+        if (result.protocolV2 && syncOptions.categories) {
             val mergedUids = newSyncData.backupCategories.map { it.uid }.filter { it != 0L }.toSet()
             val mergedNames = newSyncData.backupCategories.map { it.name }.toSet()
             val localCategories = getCategories.await().filterNot { it.id == 0L }

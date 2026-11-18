@@ -586,6 +586,14 @@ class Downloader(
             tmpFile.delete()
             throw Exception("Downloaded book is empty: ${download.chapter.name}")
         }
+        // A 200 with an HTML error page has bytes but is not an EPUB. Checking the ZIP magic is
+        // cheaper than marking a broken file as the reader's only offline copy.
+        val header = ByteArray(2)
+        val headerRead = tmpFile.openInputStream().use { it.read(header) }
+        if (headerRead < header.size || header[0] != 'P'.code.toByte() || header[1] != 'K'.code.toByte()) {
+            tmpFile.delete()
+            throw Exception("Downloaded book is not an EPUB: ${download.chapter.name}")
+        }
         if (!tmpFile.renameTo(fileName)) {
             tmpFile.delete()
             throw Exception("Failed to finalize $fileName (rename failed)")

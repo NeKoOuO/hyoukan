@@ -48,6 +48,16 @@ class SyncYomiSyncService(
         // stalls mid-body on a real library and leaves the cursor advanced with nothing applied.
         val TIMEOUT = 5.minutes
         val FULL_SYNC_INTERVAL = 24.hours
+
+        // One client per process: the timeouts are per-client, and building a new pool per
+        // request leaked a dispatcher and connection pool every sync.
+        val client by lazy {
+            OkHttpClient.Builder()
+                .connectTimeout(TIMEOUT)
+                .readTimeout(TIMEOUT)
+                .writeTimeout(TIMEOUT)
+                .build()
+        }
     }
 
     @Serializable
@@ -168,7 +178,7 @@ class SyncYomiSyncService(
             body = body,
         )
 
-        val response = syncClient().newCall(request).await()
+        val response = client.newCall(request).await()
 
         if (!response.isSuccessful) {
             val responseBody = response.body.string()
@@ -226,7 +236,7 @@ class SyncYomiSyncService(
             url = "$host/api/sync/v2/capabilities",
             headers = baseHeaders(syncPreferences.clientAPIKey().get()).build(),
         )
-        val response = syncClient().newCall(request).await()
+        val response = client.newCall(request).await()
         val supported = when (response.code) {
             HttpStatus.SC_OK -> parseCapabilitiesV2(response.body.string())
             HttpStatus.SC_NOT_FOUND -> {
@@ -265,12 +275,6 @@ class SyncYomiSyncService(
         .add("X-Device-ID", syncPreferences.uniqueDeviceID())
         .add("X-Device-Name", Build.MODEL)
 
-    private fun syncClient(): OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(TIMEOUT)
-        .readTimeout(TIMEOUT)
-        .writeTimeout(TIMEOUT)
-        .build()
-
     private suspend fun pullSyncData(): Pair<SyncData?, String> {
         val host = syncPreferences.clientHost().get()
         val apiKey = syncPreferences.clientAPIKey().get()
@@ -288,7 +292,7 @@ class SyncYomiSyncService(
             headers = headers,
         )
 
-        val response = syncClient().newCall(downloadRequest).await()
+        val response = client.newCall(downloadRequest).await()
 
         if (response.code == HttpStatus.SC_NOT_MODIFIED) {
             // not modified
@@ -354,7 +358,7 @@ class SyncYomiSyncService(
             body = body,
         )
 
-        syncClient().newCall(uploadRequest).await()
+        client.newCall(uploadRequest).await()
             .use { response ->
                 if (response.isSuccessful) {
                     val newETag = response.headers["ETag"]
@@ -400,7 +404,7 @@ class SyncYomiSyncService(
                     body = requestBody,
                 )
 
-                syncClient().newCall(request).await().close()
+                client.newCall(request).await().close()
             } catch (e: Exception) {
                 logcat(LogPriority.ERROR) { "Failed to report sync event: ${e.message}" }
             }
@@ -420,7 +424,7 @@ class SyncYomiSyncService(
         )
 
         val response = try {
-            syncClient().newCall(request).await()
+            client.newCall(request).await()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

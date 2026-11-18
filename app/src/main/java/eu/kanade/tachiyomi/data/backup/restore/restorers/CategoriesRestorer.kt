@@ -4,6 +4,7 @@ import eu.kanade.tachiyomi.data.backup.models.BackupCategory
 import mihon.app.di.globalAppGraph
 import tachiyomi.data.DatabaseHandler
 import tachiyomi.domain.category.interactor.GetCategories
+import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.library.service.LibraryPreferences
 
 class CategoriesRestorer(
@@ -53,7 +54,7 @@ class CategoriesRestorer(
                         // SY --> A sync delta is a converging replica: adopt the server's
                         // identity and order so reorders/renames converge across devices.
                         if (isSync) {
-                            applySyncedCategory(dbCategory.id, it, trimmed, dbCategory.parentId)
+                            applySyncedCategory(dbCategory, it, trimmed)
                         }
                         // SY <--
                         return@mapNotNull dbCategory
@@ -71,7 +72,7 @@ class CategoriesRestorer(
                         if (existing != null) {
                             if (it.id != 0L) restoredIdsByBackupId[it.id] = existing.id
                             if (isSync) {
-                                applySyncedCategory(existing.id, it, trimmed, existing.parentId)
+                                applySyncedCategory(existing, it, trimmed)
                             }
                             return@mapNotNull existing
                         }
@@ -176,10 +177,9 @@ class CategoriesRestorer(
 
     // SY -->
     private suspend fun applySyncedCategory(
-        id: Long,
+        current: Category,
         backup: BackupCategory,
         name: String,
-        parentId: Long,
     ) {
         handler.await {
             categoryQueries.updateSync(
@@ -187,22 +187,25 @@ class CategoriesRestorer(
                 order = backup.order,
                 flags = backup.flags,
                 hidden = if (backup.hidden) 1L else 0L,
-                parentId = parentId,
+                parentId = current.parentId,
                 type = backup.type?.toLong(),
-                uid = backup.uid,
-                version = backup.version,
-                lastModifiedAt = backup.lastModifiedAt,
-                id = id,
+                // A v1/third-party backup may not carry the v2 identity at all (uid 0, version 0).
+                // Writing those blindly would wipe the local identity and make the next v2 upload
+                // lose a merge it should win, so absent identity fields keep the local values.
+                uid = backup.uid.takeIf { it != 0L } ?: current.uid,
+                version = maxOf(backup.version, current.version),
+                lastModifiedAt = maxOf(backup.lastModifiedAt, current.lastModifiedAt),
+                id = current.id,
             )
         }
         backup.trackStatus?.let { trackStatus ->
             handler.await {
-                categoryQueries.updateTrackStatus(trackStatus = trackStatus.toLong(), id = id)
+                categoryQueries.updateTrackStatus(trackStatus = trackStatus.toLong(), id = current.id)
             }
         }
         backup.updateInterval?.let { updateInterval ->
             handler.await {
-                categoryQueries.updateUpdateInterval(updateInterval = updateInterval.toLong(), id = id)
+                categoryQueries.updateUpdateInterval(updateInterval = updateInterval.toLong(), id = current.id)
             }
         }
     }
