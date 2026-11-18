@@ -150,7 +150,7 @@ private object DownloadedBookPageLoaderProvider : PageLoaderProvider {
 
         logcat { "DownloadedBookPageLoaderProvider: opening downloaded book ${book.name}" }
         return TextPageLoader(
-            source = DownloadedEpubTextSource(request.context, book, textSource),
+            source = DownloadedEpubTextSource(request.context, book, request.source),
             chapter = chapter,
         ).apply { isLocal = true }
     }
