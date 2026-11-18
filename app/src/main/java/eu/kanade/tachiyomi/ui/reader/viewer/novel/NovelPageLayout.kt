@@ -164,7 +164,12 @@ body { height: 100% !important; overflow: hidden !important; column-fill: auto !
                 px(dcs.paddingTop) - px(dcs.paddingBottom) -
                 px(dcs.borderTopWidth) - px(dcs.borderBottomWidth)
             );
-            var avail = Math.max(1, rootW - ml - mr);
+            // Bound by the visible viewport too: an html margin/padding can push the root's
+            // content box past the window, and then even a column that fits html's box is clipped
+            // by the window edge.
+            var visibleW = Math.max(1, Math.min(rootW, winW - rootRect.left));
+            var visibleH = Math.max(1, Math.min(rootH, winH - rootRect.top));
+            var avail = Math.max(1, visibleW - ml - mr);
             var gap = self.columns > 1 ? $DOUBLE_COLUMN_GAP_PX : 0;
             var colW = Math.floor((avail - gap * (self.columns - 1)) / self.columns);
             if (colW < 1) return false;
@@ -174,7 +179,7 @@ body { height: 100% !important; overflow: hidden !important; column-fill: auto !
             // author rule, which is exactly the precedence the reader's own layout needs over its
             // own defaults.
             b.style.setProperty('width', avail + 'px', 'important');
-            b.style.setProperty('height', Math.max(1, rootH - mt - mb) + 'px', 'important');
+            b.style.setProperty('height', Math.max(1, visibleH - mt - mb) + 'px', 'important');
             b.style.columnCount = '' + self.columns;
             b.style.columnGap = gap + 'px';
             b.style.columnFill = 'auto';
