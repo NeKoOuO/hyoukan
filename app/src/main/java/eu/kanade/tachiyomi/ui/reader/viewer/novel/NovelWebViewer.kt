@@ -2339,6 +2339,23 @@ internal class NovelWebViewer(
         // built document's.
         val custom = customCssForInjection()
         val css = readerFontCss() + NovelTypographyCss.stylesheet(typography, custom.isNotBlank())
+        // The paged stylesheet has to follow the typography in the live DOM exactly as it does in
+        // a built document. Emitted before it, the typography's `html, body { margin }` wins the
+        // source-order tie against `html { margin: 0 }`, the html element shrinks, and the column
+        // box is sized from the wrong containing block - every line's right edge is clipped by
+        // `overflow: hidden` (issue #87). Re-created rather than assumed, so a mode change cannot
+        // leave a stale copy behind.
+        val pagedCss = if (isPagedMode) NovelPageLayout.PAGED_STATIC_CSS else ""
+        val pagedInstall = if (pagedCss.isBlank()) {
+            ""
+        } else {
+            """
+                  var paged = document.createElement('style');
+                  paged.id = 'kmk-paged-live';
+                  paged.textContent = ${NovelScrollBridge.quoteForJs(NovelPageLayout.PAGED_STATIC_CSS)};
+                  if (document.head) document.head.appendChild(paged);
+            """.trimIndent()
+        }
         val customInstall = if (custom.isBlank()) {
             ""
         } else {
@@ -2357,6 +2374,9 @@ internal class NovelWebViewer(
               s.id = 'kmk-typography-live';
               s.textContent = ${NovelScrollBridge.quoteForJs(css)};
               if (document.head) document.head.appendChild(s);
+              var previousPaged = document.getElementById('kmk-paged-live');
+              if (previousPaged && previousPaged.parentNode) previousPaged.parentNode.removeChild(previousPaged);
+              $pagedInstall
               var previous = document.getElementById('kmk-custom-css');
               if (previous && previous.parentNode) previous.parentNode.removeChild(previous);
               $customInstall

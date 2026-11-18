@@ -19,6 +19,7 @@ import eu.kanade.tachiyomi.data.notification.NotificationHandler
 import eu.kanade.tachiyomi.extension.reportingSourceErrorsOrNull
 import eu.kanade.tachiyomi.source.UnmeteredSource
 import eu.kanade.tachiyomi.source.model.Page
+import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.storage.DiskUtil
 import eu.kanade.tachiyomi.util.storage.saveTo
@@ -412,6 +413,22 @@ class Downloader(
         val tmpDir = mangaDir.createDirectory(chapterDirname + TMP_DIR_SUFFIX)!!
 
         try {
+            // KMK --> A text book is one file, not a page list (issue #85). The source is asked
+            // before the image path so a Komga EPUB cannot fail with "No pages found" - and so a
+            // chapter the same source serves as images still takes the ordinary route.
+            val downloadable = download.source as? DownloadableTextSource
+            if (downloadable != null) {
+                val sChapter = download.chapter.toSChapter()
+                val isText = reportingSourceErrorsOrNull(download.source) {
+                    downloadable.isTextDownload(sChapter)
+                } ?: false
+                if (isText) {
+                    downloadBookFile(download, mangaDir, chapterDirname, tmpDir, downloadable, sChapter)
+                    return
+                }
+            }
+            // KMK <--
+
             // If the page list already exists, start from the file
             val pageList = download.pages ?: run {
                 // Otherwise, pull page list from network and add them to download object
@@ -530,6 +547,59 @@ class Downloader(
             notifier.onError(error.message, download.chapter.name, download.manga.title, download.manga.id)
         }
     }
+
+    // KMK -->
+    /**
+     * Saves a text chapter as its source file (an EPUB), the offline form the book reader opens.
+     *
+     * Kept separate from the image path on purpose: there are no pages to count, no data saver and
+     * no CBZ wrapping - an EPUB inside a CBZ is not a book. The file is written under a `.tmp`
+     * name and renamed only once it has bytes, so a dropped transfer leaves no half-book the
+     * reader would happily open.
+     */
+    private suspend fun downloadBookFile(
+        download: Download,
+        mangaDir: UniFile,
+        chapterDirname: String,
+        tmpDir: UniFile,
+        source: DownloadableTextSource,
+        chapter: SChapter,
+    ) {
+        val fileName = "book.${source.textDownloadExtension}"
+
+        // A previous attempt may have died mid-transfer; its `.tmp` is not a resumable file.
+        tmpDir.listFiles()
+            ?.filter { it.extension == "tmp" }
+            ?.forEach { it.delete() }
+
+        val tmpFile = tmpDir.createFile("$fileName.tmp")
+            ?: throw Exception("Failed to create the book file for ${download.chapter.name}")
+
+        download.status = Download.State.DOWNLOADING
+        // One call is enough for a single-file transfer: the notification has no page counts to
+        // advance, but the download still has to be visible while it runs.
+        notifier.onProgressChange(download)
+        source.downloadTextChapter(chapter, tmpFile)
+
+        val length = tmpFile.length()
+        if (length <= 0L) {
+            tmpFile.delete()
+            throw Exception("Downloaded book is empty: ${download.chapter.name}")
+        }
+        if (!tmpFile.renameTo(fileName)) {
+            tmpFile.delete()
+            throw Exception("Failed to finalize $fileName (rename failed)")
+        }
+
+        if (!tmpDir.renameTo(chapterDirname)) {
+            throw Exception("Failed to finalize the download directory for ${download.chapter.name}")
+        }
+        cache.addChapter(chapterDirname, mangaDir, download.manga)
+        DiskUtil.createNoMediaFile(tmpDir, context)
+        download.status = Download.State.DOWNLOADED
+        runCatching { globalAppGraph.achievementManager.incrementCounter("downloads") }
+    }
+    // KMK <--
 
     /**
      * Gets the image from the filesystem if it exists or downloads it otherwise.

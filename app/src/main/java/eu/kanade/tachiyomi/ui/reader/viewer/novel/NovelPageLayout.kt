@@ -145,7 +145,26 @@ body { height: 100% !important; overflow: hidden !important; column-fill: auto !
             function px(v) { var f = parseFloat(v); return isNaN(f) ? 0 : f; }
             var ml = px(cs.marginLeft), mr = px(cs.marginRight);
             var mt = px(cs.marginTop), mb = px(cs.marginBottom);
-            var avail = Math.max(1, winW - ml - mr);
+            // The body's containing block is the html element's *content* box, not the viewport.
+            // Those differ whenever a stylesheet puts a margin or padding on html - the reader's
+            // own live typography swap does exactly that - and measuring the viewport there sizes
+            // the column box too wide: the right edge of every line lands past the page and is
+            // clipped by `overflow: hidden`. Measured off the laid-out element so both the live
+            // stylesheet and a reader's custom CSS are obeyed.
+            var rootRect = de.getBoundingClientRect();
+            var rootW = Math.max(
+              1,
+              rootRect.width -
+                px(dcs.paddingLeft) - px(dcs.paddingRight) -
+                px(dcs.borderLeftWidth) - px(dcs.borderRightWidth)
+            );
+            var rootH = Math.max(
+              1,
+              rootRect.height -
+                px(dcs.paddingTop) - px(dcs.paddingBottom) -
+                px(dcs.borderTopWidth) - px(dcs.borderBottomWidth)
+            );
+            var avail = Math.max(1, rootW - ml - mr);
             var gap = self.columns > 1 ? $DOUBLE_COLUMN_GAP_PX : 0;
             var colW = Math.floor((avail - gap * (self.columns - 1)) / self.columns);
             if (colW < 1) return false;
@@ -155,7 +174,7 @@ body { height: 100% !important; overflow: hidden !important; column-fill: auto !
             // author rule, which is exactly the precedence the reader's own layout needs over its
             // own defaults.
             b.style.setProperty('width', avail + 'px', 'important');
-            b.style.setProperty('height', Math.max(1, winH - mt - mb) + 'px', 'important');
+            b.style.setProperty('height', Math.max(1, rootH - mt - mb) + 'px', 'important');
             b.style.columnCount = '' + self.columns;
             b.style.columnGap = gap + 'px';
             b.style.columnFill = 'auto';

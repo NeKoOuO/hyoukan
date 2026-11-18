@@ -3,7 +3,9 @@ package eu.kanade.tachiyomi.source.online.all.komga
 import android.content.SharedPreferences
 import android.text.InputType
 import androidx.preference.PreferenceScreen
+import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.BuildConfig
+import eu.kanade.tachiyomi.data.download.DownloadableTextSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.network.parseAs
@@ -68,7 +70,8 @@ class Komga(
     TextTocSource,
     TextSearchSource,
     TextResourceSource,
-    TextBaseUrlSource {
+    TextBaseUrlSource,
+    DownloadableTextSource {
 
     // ------------------------------------------------------------ basics
 
@@ -253,6 +256,22 @@ class Komga(
         // The loader provider treats false as "comic" and only asks once; a probe failure
         // therefore opens the chapter as pages, the source's historical default.
         return runBlockingFirst { isBookShaped(chapter.url) }
+    }
+
+    // ------------------------------------------------------------ offline books
+
+    /**
+     * A downloaded EPUB is the book file itself, not a page list. The probe is the same one the
+     * entry router uses, so a chapter cannot download as a book and open as a comic (or the other
+     * way around).
+     */
+    override suspend fun isTextDownload(chapter: SChapter): Boolean = isBookShaped(chapter.url)
+
+    override suspend fun downloadTextChapter(chapter: SChapter, target: UniFile) {
+        val response = client.newCall(GET("${chapter.url}/file", headers)).awaitSuccess()
+        response.body.byteStream().use { input ->
+            target.openOutputStream().use { output -> input.copyTo(output) }
+        }
     }
 
     // KMK <--

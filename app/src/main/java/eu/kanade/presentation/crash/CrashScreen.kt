@@ -2,11 +2,9 @@ package eu.kanade.presentation.crash
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material3.MaterialTheme
@@ -68,19 +66,21 @@ fun CrashScreen(
         rejectText = stringResource(MR.strings.crash_screen_restart_application),
         onRejectClick = onRestartClick,
     ) {
+        // InfoScreen's content is already inside a vertically scrollable column, so it is measured
+        // with an unbounded maximum height. `fillMaxSize()` here turned that into an infinite
+        // height, and the inner `verticalScroll` below then threw
+        // "Vertically scrollable component was measured with an infinity maximum height" - the
+        // crash screen crashed while showing a crash, hiding the report that caused it. The outer
+        // column scrolls the report; this box only needs the width.
         Box(
             modifier = Modifier
                 .padding(vertical = MaterialTheme.padding.small)
                 .clip(MaterialTheme.shapes.small)
-                .fillMaxSize()
+                .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
             val text = reportText ?: exception?.toString() ?: "Unknown error"
-            SelectionContainer(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState()),
-            ) {
+            SelectionContainer(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = text,
                     modifier = Modifier

@@ -247,6 +247,14 @@ fun main() {
         "paged columns clip and fill in order",
         paged.contains("column-fill: auto") && paged.contains("overflow: hidden"),
     )
+    // The column box is sized from the html element's content box, not the viewport: a margin on
+    // html (the live typography swap used to leave one) otherwise puts every line's right edge
+    // past the page and `overflow: hidden` clips it - issue #87.
+    checkTrue(
+        "paged bridge sizes the column from html's content box",
+        NovelPageLayout.PAGED_BRIDGE_SCRIPT.contains("getBoundingClientRect") &&
+            NovelPageLayout.PAGED_BRIDGE_SCRIPT.contains("rootW"),
+    )
     // The paged box's html/body overrides must win by source order against the typography's own
     // !important group - the same rule that puts the typography after the publisher.
     checkTrue(

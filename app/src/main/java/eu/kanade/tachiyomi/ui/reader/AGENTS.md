@@ -14,7 +14,7 @@ Fullscreen reading surface. Deliberately a classic `Activity`, NOT a Nav3 route 
 |------|---------|
 | `viewer/` | `Viewer.kt` + `ViewerConfig.kt` contracts; `pager/` (strip) and `navigation/` (webtoon/LTR/RTL/vertical) viewers; `ReaderPageImageView`, progress/transition views |
 | `viewer/PageTranslator.kt`, `viewer/ReaderTranslation.kt` | MTL translation overlay hookup — engine itself lives in `yakuyomi-engine/` (see its AGENTS.md) |
-| `loader/` | `PageLoaderFactory` → `PageLoader`: `HttpPageLoader`, `ArchivePageLoader`, `DirectoryPageLoader`, `DownloadPageLoader`, `EpubPageLoader` |
+| `loader/` | `PageLoaderFactory` → `PageLoader`: `HttpPageLoader`, `ArchivePageLoader`, `DirectoryPageLoader`, `DownloadPageLoader`, `EpubPageLoader`; `DownloadedEpubTextSource` + `DownloadedBookPageLoaderProvider` open a downloaded book file (not pages) so it reads offline |
 | `model/` | `ReaderChapter`, `ReaderPage`, `ReaderItem`, `ViewerChapters`, `ChapterTransition`, `InsertPage` |
 | `setting/` | `ReaderPreferences`, `ReadingMode`, `ReaderSettingsScreenModel`, `ReaderOrientation`, `ReaderBottomButton` |
 | `setting/Upscale*.kt` | *(moved)* — the upscaling stack now lives in `:upscale` (see `upscale/AGENTS.md`); the reader only touches it through `upscale.app.UpscaleReaderBridge` and the WebGPU tile gate in `WebGpuConfig` |

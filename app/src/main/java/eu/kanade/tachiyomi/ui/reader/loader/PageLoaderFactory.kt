@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.ui.reader.loader
 import android.content.Context
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.DownloadProvider
+import eu.kanade.tachiyomi.data.download.DownloadableTextSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.EntryType
 import eu.kanade.tachiyomi.source.model.EntryTypeSource
@@ -55,6 +56,7 @@ data class PageLoaderRequest(
 object PageLoaderRegistry {
     // KMK -->
     private val providers = mutableListOf<PageLoaderProvider>(
+        DownloadedBookPageLoaderProvider,
         TextEntryPageLoaderProvider,
         TextPageLoaderProvider,
         DefaultPageLoaderProvider,
@@ -101,6 +103,59 @@ object PageLoaderRegistry {
     // KMK <--
 }
 
+// KMK --> A downloaded book must be read from the file on disk, never from the source's live text
+// endpoint: the download exists to work offline. Claims before the entry-typed provider so it wins
+// for a Komga book that is also a `TextSource`, and declines when the downloaded chapter is a comic
+// (images, not an EPUB), which keeps the ordinary download loader in charge.
+private object DownloadedBookPageLoaderProvider : PageLoaderProvider {
+    override val order: Int = -30
+
+    override fun create(request: PageLoaderRequest): PageLoader? {
+        // The file, not the source, is what makes this readable: a book downloaded before its
+        // source or extension was removed still opens, which is the point of a download.
+        val chapter = request.chapter.chapter
+
+        val isDownloaded = request.downloadManager.isChapterDownloaded(
+            chapterName = chapter.name,
+            chapterScanlator = chapter.scanlator,
+            chapterUrl = chapter.url,
+            mangaTitle = request.manga.ogTitle,
+            sourceId = request.source.id,
+            skipCache = true,
+        )
+        if (!isDownloaded) return null
+
+        val chapterDir = request.downloadProvider.findChapterDir(
+            chapterName = chapter.name,
+            chapterScanlator = chapter.scanlator,
+            chapterUrl = chapter.url,
+            mangaTitle = request.manga.ogTitle,
+            source = request.source,
+        ) ?: return null
+
+        val extension = (request.source as? DownloadableTextSource)?.textDownloadExtension ?: "epub"
+        val book = chapterDir.listFiles()
+            ?.firstOrNull { it.isFile && it.name?.endsWith(".$extension", ignoreCase = true) == true }
+            ?: return null
+
+        // The details screen's explicit "render as comic" choice outranks the source's own book
+        // detection (see Manga.isBookEntry). Honour it for the downloaded file too: a book opened
+        // as a comic is the same walk over its illustrations the local source's EPUB path uses.
+        val explicitComic = request.manga.hasExplicitEntryType() &&
+            request.manga.entryType() == EntryType.COMIC
+        if (explicitComic) {
+            logcat { "DownloadedBookPageLoaderProvider: opening ${book.name} as a comic (explicit)" }
+            return EpubPageLoader(book.epubReader(request.context))
+        }
+
+        logcat { "DownloadedBookPageLoaderProvider: opening downloaded book ${book.name}" }
+        return TextPageLoader(
+            source = DownloadedEpubTextSource(request.context, book, textSource),
+            chapter = chapter,
+        ).apply { isLocal = true }
+    }
+}
+
 // KMK --> Text sources (EPUB, web novel) are consulted first: they are a distinct contract with no
 // image fallback, and letting the default chain try an image loader first would produce a confusing
 // "page list empty" for every chapter.
@@ -117,8 +172,8 @@ private object TextPageLoaderProvider : PageLoaderProvider {
             return null
         }
         val source = request.source as? TextSource ?: return null
-        // A downloaded chapter has no text to load — downloads only store images — so a text source
-        // is always read live.
+        // A downloaded book is claimed by DownloadedBookPageLoaderProvider above; this path is the
+        // live one. Image downloads never reach here (their source is not a TextSource).
         return TextPageLoader(source, request.chapter.chapter).apply {
             isLocal = source !is HttpSource
         }

@@ -26,6 +26,7 @@ coexists — the app's Komga enhanced tracker accepts both FQCNs, so either sour
 | `KomgaDto.kt` | kotlinx-serialization DTOs (server sends more; unknown keys are ignored) |
 | `KomgaPreferences.kt` | Keys on the standard `source_$id` file; `serverBase()`/`displayName()` |
 | `KomgaEpubAdapter.kt` | Downloads the EPUB to `cacheDir/komga/<bookId>.epub.cache` (keyed on the server's `fileHash`), then serves it through `EpubTextSource`/`EpubResourceServer` — the same stack as the local source's epub half |
+| `DownloadableTextSource` (in `data/download/`) | The optional seam that lets a book chapter be **downloaded** as its source file instead of pages. Komga implements it; the downloader writes `<chapter dir>/book.epub`, and `DownloadedBookPageLoaderProvider` opens that file through `DownloadedEpubTextSource` so a downloaded book reads offline. Never wrap the result in CBZ — an EPUB in a CBZ is not a book |
 
 **URLs are stored absolute** (`$server/api/v1/series/<id>`), matching the Keiyoushi extension's
 storage format: the enhanced tracker GETs `manga.url` directly, and this source's library entries
