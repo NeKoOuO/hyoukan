@@ -288,6 +288,11 @@ the `BETA_RELEASE_TOKEN` repository secret (a token with release write access to
 the default `GITHUB_TOKEN` cannot reach another repository). Without it the job warns and skips
 so master stays green.
 
+Published betas also ping the beta-testers Discord role through `notify-beta-discord`, which
+needs the `BETA_DISCORD_WEBHOOK` secret (a webhook for the beta channel). It is gated on the
+release actually being published, so a missing `BETA_RELEASE_TOKEN` sends nothing; a missing
+webhook prints the payload and skips.
+
 ## Release notes
 
 `RELEASE_NOTES.md` is the curated, human-readable staging area for the **next**

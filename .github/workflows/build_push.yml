@@ -277,6 +277,12 @@ jobs:
     # Pushes only, and only from master: a manual dispatch of an older ref must not take over a
     # newer beta tag.
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    outputs:
+      # Consumed by notify-beta-discord below. `released` gates the ping so a
+      # skipped publish (no BETA_RELEASE_TOKEN) never announces a beta.
+      changes: ${{ steps.notes.outputs.CHANGES }}
+      change_count: ${{ steps.notes.outputs.CHANGE_COUNT }}
+      released: ${{ steps.token.outputs.available }}
 
     steps:
       - name: Clone repo
@@ -290,6 +296,7 @@ jobs:
           name: Houri-preview-r${{ needs.build.outputs.commit_count }}
 
       - name: Beta notes
+        id: notes
         env:
           BETA_TOKEN: ${{ secrets.BETA_RELEASE_TOKEN }}
         run: |
@@ -308,11 +315,24 @@ jobs:
               || true)
           fi
 
+          # Capped so a long gap between betas cannot balloon the release body
+          # or the Discord embed; the trailing bullet still says how many are hidden.
+          max_commits=100
+          change_count=0
+          : > beta_changes.md
           if [ -n "$prev_sha" ] && git cat-file -e "${prev_sha}^{commit}" 2>/dev/null; then
+            change_count=$(git rev-list --no-merges --count "$prev_sha..HEAD")
+            git log --no-merges --max-count="$max_commits" --format='- %s (%h)' "$prev_sha..HEAD" > beta_changes.md
+            if [ "$change_count" -gt "$max_commits" ]; then
+              echo "- …and $((change_count - max_commits)) more commits" >> beta_changes.md
+            fi
+          fi
+
+          if [ -s beta_changes.md ]; then
             {
               echo "Changes since the previous beta:"
               echo
-              git log --no-merges --format='- %s (%h)' "$prev_sha..HEAD"
+              cat beta_changes.md
             } > beta_notes.md
           else
             echo "_Built from master; no earlier beta build to compare against._" > beta_notes.md
@@ -327,6 +347,15 @@ jobs:
             echo "- \`Houri-armeabi-v7a-*\`, \`Houri-x86_64-*\`, \`Houri-x86-*\` — same MTL build for older ARM or Intel devices."
             echo "- \`Houri-nomtl-*\` — lightweight builds without the MTL engine: smaller download, but AI translation is unavailable."
           } >> beta_notes.md
+
+          # Handed to the Discord notifier. Same file body, so the release and
+          # the announcement cannot disagree about what changed.
+          {
+            echo "CHANGES<<beta_changes_delimiter"
+            cat beta_changes.md
+            echo "beta_changes_delimiter"
+            echo "CHANGE_COUNT=$change_count"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Check beta token
         id: token
@@ -361,3 +390,39 @@ jobs:
           prerelease: false
           make_latest: true
           token: ${{ secrets.BETA_RELEASE_TOKEN }}
+
+  # Pings the beta-testers role once the release above exists. Gated on
+  # publish-beta's `released` output: if BETA_RELEASE_TOKEN is unset the release
+  # step is skipped and testers must not get an announcement for an APK that
+  # was never published.
+  #
+  # Needs the `BETA_DISCORD_WEBHOOK` secret (a webhook for the beta channel).
+  # Without it the script prints the payload and skips, so master stays green.
+  notify-beta-discord:
+    name: Announce beta on Discord
+    needs:
+      - build
+      - publish-beta
+    runs-on: 'ubuntu-24.04'
+    if: needs.publish-beta.outputs.released == 'true'
+    environment: Primary
+
+    steps:
+      - name: Clone repo (for notify script)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: Send beta announcement
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.BETA_DISCORD_WEBHOOK }}
+          DISCORD_ROLE_ID: '1564078706673057902'
+          BETA_REPO: PineappleTwilight/houri-beta
+          BETA_TAG: r${{ needs.build.outputs.commit_count }}
+          BETA_CHANGES: ${{ needs.publish-beta.outputs.changes }}
+          BETA_CHANGE_COUNT: ${{ needs.publish-beta.outputs.change_count }}
+          AVATAR_URL: https://raw.githubusercontent.com/${{ github.repository }}/master/.github/readme-images/app-icon.png
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: python3 .github/scripts/beta_discord_notify.py
+
