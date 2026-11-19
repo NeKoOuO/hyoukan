@@ -73,10 +73,16 @@ class AppIconManager(
         AppIdentitySettingKeys.customName.default,
     )
 
-    // The alias class names live under the app's Kotlin namespace (`eu.kanade.tachiyomi`), not the
-    // runtime applicationId (`app.houri` and its suffixes): a ComponentName's package is the
-    // applicationId, but its class name is the manifest component's fully-qualified name.
-    private val aliasPackage = MainActivity::class.java.packageName
+    // The alias class names live under the app's Kotlin namespace (`eu.kanade.tachiyomi…`, here
+    // `eu.kanade.tachiyomi.ui.main`), not the runtime applicationId (`app.houri` and its suffixes):
+    // a ComponentName's package is the applicationId, but its class name is the manifest
+    // component's fully-qualified name.
+    //
+    // Derived from the class *name*, never `Class.getPackageName()`: that is a Java 9 API Android's
+    // runtime does not implement (field crash on API 30: `NoSuchMethodError: ... getPackageName()
+    // in class java.lang.Class`). `name` is stable on every API level and the aliases are declared
+    // beside MainActivity in the manifest.
+    private val aliasPackage = MainActivity::class.java.name.substringBeforeLast('.')
 
     val builtInIcons: List<BuiltInIcon> = listOf(
         BuiltInIcon(

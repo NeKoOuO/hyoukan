@@ -32,6 +32,13 @@ custom path therefore pins a `ShortcutInfoCompat` launcher shortcut carrying the
 custom name (`pinCustomShortcut`), and the UI says so. `customAppName` is also shown in
 `LogoHeader`.
 
+**Never derive the alias package with `Class.getPackageName()`.** That is a Java 9 API Android's
+runtime does not implement on some releases — on API 30 it throws `NoSuchMethodError: No virtual
+method getPackageName() ... in class java.lang.Class`, and because `LogoHeader` resolves
+`AppIconManager` during composition, it takes the More tab down with it. Use the class's own name
+instead: `MainActivity::class.java.name.substringBeforeLast('.')` is available on every API level
+and is exactly the package the manifest aliases sit in.
+
 ## Baked-in Komga source (KMK)
 
 `app/src/main/java/eu/kanade/tachiyomi/source/online/all/komga/` — a self-hosted Komga server
