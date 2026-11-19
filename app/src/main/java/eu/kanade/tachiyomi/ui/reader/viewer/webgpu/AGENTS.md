@@ -1166,6 +1166,25 @@ line, for instance, does not appear anywhere in the current tree.
   fires on release (`waitForDown` is gated) and the continuous early-return key checks both flags.
   Setting `doubleTapGesturesEnabled` directly defeats the tie; always go through
   `doubleTapZoomEnabled` and let the setter do the work.
+- **"Disable zoom in" is a mode (`maxScaleAtHome`), never a stored `maxScale`.** A page is
+  decoded before it is attached, and `homeScale` answers the parentless **0.01 sentinel** then —
+  the same latch the degenerate-scale landmine above is about. Writing `maxScale = homeScale`
+  at adoption therefore either stored nothing (the old `parent == null` guard skipped the whole
+  clamp, which is why the setting did nothing) or froze the page. `ImagePage.maxScaleAtHome`
+  makes the getter resolve `maxScale` against the real fit, so the clamp starts working the
+  moment the page has dimensions. The library also clamps pinch and double-tap-drag scale to
+  `maxScale` *during* the gesture; a clamp applied only on release reads as the setting being
+  ignored. Double-tap zoom is **not** part of this clamp: it has its own
+  `doubleTapZoomEnabled` switch, and clamping `maxScale` for it used to kill pinch zoom too.
+- **A tile grid at rest is revealed once, not tile by tile.** `TileRenderer.nextRequest` pulls
+  tiles centre-out, and blitting each one as it lands paints a page open as a ripple from the
+  middle of the screen — invisible on an LCD and unmistakable on e-ink, where every partial
+  refresh flashes its own region. `drawCore` now holds the blit while the camera is at rest and
+  any visible tile is missing (or was just dropped for its filtered re-cut), letting the fast
+  full-page path show underneath, and draws all tiles in one switch once coverage is complete.
+  While the camera moves, the progressive blit is kept. `heldFrames` /
+  `HOLD_INCOMPLETE_MAX_FRAMES` bound the hold so a budget that cannot hold a viewport degrades
+  to the old behaviour instead of pinning the page to the fast path.
 - **Never reuse a GPU adapter** (above).
 - **Never call `WebGpuMemoryBudget.sample()` from a getter.** `cacheSize` is read by the render
   walk; `sample()` is a binder call. The snapshot exists so hot paths only ever read a volatile

@@ -155,42 +155,39 @@ internal fun WebGpuViewer.applyZoomPolicy(page: ImagePage.ImageSingle) {
 }
 
 /**
- * The viewer library always performs its built-in double-tap zoom, so when the
- * preference is disabled the page's max scale is clamped to its home scale - the
- * zoom animation then lands where it started. The paged "disable zoom in" pref
- * clamps the same way, and the library additionally caps pinch/double-tap-drag
- * gestures at a restricted maxScale. The library sentinel -1f restores the computed default.
+ * Applies the paged zoom opt-outs.
+ *
+ * "Disable zoom in" is the only preference that caps scale, and it does so as a *mode*
+ * ([ImagePage.maxScaleAtHome]) rather than a stored number: a page is decoded
+ * before it is attached, so [ImagePage.ImageSingle.homeScale] is the parentless 0.01 sentinel
+ * at this point and latching that value is the degenerate-scale bug the class already
+ * documents. The getter resolves the clamp against the real fit once the page has dimensions.
+ *
+ * Double-tap zoom is deliberately not part of this: the library owns it through
+ * [ca.mpreg.webgpuviewer.viewer.ImageViewerState.doubleTapZoomEnabled], which gates the
+ * gesture and ties the double-tap window. Clamping maxScale for it, as this used to, also
+ * disabled pinch zoom - a setting "double tap to zoom" never governed.
  */
 internal fun WebGpuViewer.applyDoubleTapZoomPolicy(page: ImagePage.ImageSingle) {
     if (isDestroyed || isContinuous) return
-    if (config.doubleTapZoom && !config.disableZoomIn) {
+    if (!config.disableZoomIn) {
+        page.maxScaleAtHome = false
         try {
+            // The library sentinel -1f restores the computed default.
             page.maxScale = -1f
         } catch (_: Exception) {
         }
         return
     }
-    val w = try {
-        pager.state.width
-    } catch (_: Exception) {
-        0
-    }
-    val h = try {
-        pager.state.height
-    } catch (_: Exception) {
-        0
-    }
-    if (w <= 0 || h <= 0) return
-    // KMK --> The page's parent is not set yet at adoption time (attach happens when the render
-    // walk first fetches it), and homeScale's degenerate branch answers 0.01 for a parentless
-    // page. Latching that into maxScale would clamp every later animation - the degenerate
-    // freeze the zero-size-window guard below was written for, reached through a different
-    // door. Scale types 3/4/5 set the homeScale field above us, so only the library-default
-    // types (1/2) can reach this parentless; the library computes its own maxScale default
-    // for them until attach, which is exactly right. KMK <--
+
+    page.maxScaleAtHome = true
+
+    // Already zoomed in when the setting was switched on: settle back to the fit instead of
+    // leaving the page at a scale its own maximum now forbids. A parentless page has no real
+    // home to settle on, so it waits for its first attach.
     if (page.parent == null) return
     try {
-        page.maxScale = page.homeScale
+        if (page.scale > page.homeScale) page.home()
     } catch (_: Exception) {
     }
 }
