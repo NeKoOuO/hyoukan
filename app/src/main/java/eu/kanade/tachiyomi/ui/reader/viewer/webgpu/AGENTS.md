@@ -311,6 +311,15 @@ webgpureport exports; a PowerVR/nomtl emulator logcat with
   also written to the **in-app log file** (`xLogE` from `recordStrike`), because a phone-only
   user never sees logcat and "the reader stopped opening on WebGPU" with no record of why
   reads as a mystery regression.
+- **The app's `androidx.webgpu` runtime must be the version the library was compiled against.**
+  The submodule is an `includeBuild`, so its `embed(libs.androidx.webgpu)` configuration never
+  reaches the app's runtime classpath; `app/build.gradle.kts` supplies that dependency itself.
+  The two had drifted since late September (app **dev05**, submodule catalog **dev06** — the bump
+  upstream made on 2026-09-28), so the field ran an older Dawn without the ImgTec/PowerVR and
+  oversized-row copy workarounds and the swapchain parked into a black screen (issue #90). The app
+  now pins `1.0.0-dev06`, the build from Dawn `b11ffea` that upstream itself uses. Keep the two
+  equal; the `dev06` version string is intentionally one Google never publishes, so it can only
+  resolve from `mpreg-ca/androidx-webgpu-repo`.
 
 ## RESOURCE OWNERSHIP
 

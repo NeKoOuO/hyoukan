@@ -65,6 +65,19 @@ migration in `mihon/core/migration/migrations/`.
 | `LogcatExtensions.kt` | `logcat {}` wrapper |
 | `Localize.kt` | Moko Resources string resolution |
 
+### `tachiyomi/decoder/ImageDecoder.kt` — the SSIV tiled-decoder bridge (KMK)
+
+Not a decoder of its own: a **binary compatibility class**. `com.github.tachiyomiorg:subsampling-scale-image-view`
+compiles its `TilesInitTask` against `tachiyomi.decoder.ImageDecoder` and builds it from the page's
+stream, so removing the old `image-decoder` artifact left the class missing and every page large
+enough to tile crashed with `NoClassDefFoundError: Ltachiyomi/decoder/ImageDecoder;` (issue #91).
+This file supplies exactly that ABI (`newInstance(stream, cropBorders, displayProfile)`,
+`width`/`height`, `decode(Rect, Int)`, `recycle()`) over `ca.mpreg.imagedecoder.ImageDecoder`.
+Crop-borders decodes the whole page once and trims with `Bitmap.cropBorders`, because upstream has
+no native trim. **Do not delete it as dead code** — nothing in Kotlin references it, and R8 has a
+keep rule for the same reason. If the SSIV fork is ever replaced by an upstream build that decodes
+tiles through `BitmapRegionDecoder`, this class goes with it.
+
 ## Device memory (`util/system/DeviceMemory*.kt` + `AppMemoryMonitor.kt`, KMK)
 
 The one place that answers "what is this device, and how much room is left right now". Three files,

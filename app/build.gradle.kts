@@ -364,13 +364,20 @@ dependencies {
     implementation(libs.subsamplingscaleimageview) {
         // KMK --> Its transitive com.github.tachiyomiorg:image-decoder is gone from this app: that
         // AAR ships libimagedecoder.so, the same soname as upstream's ca.mpreg decoder, and two
-        // copies fail mergeNativeLibs. The library itself decodes through BitmapRegionDecoder.
+        // copies fail mergeNativeLibs. This library's *tiled* decoder is compiled against
+        // tachiyomi.decoder.ImageDecoder, so the app supplies that class itself as a bridge over
+        // the MPReg decoder (core/common/.../tachiyomi/decoder/ImageDecoder.kt). Without it every
+        // page big enough to tile crashes with NoClassDefFoundError (issue #91).
         exclude(module = "image-decoder")
     }
 
     // Mihon -->
     implementation("ca.mpreg:webgpuviewer:0.0.0")
-    implementation("androidx.webgpu:webgpu:1.0.0-dev05")
+    // KMK --> Must match external/webgpuviewer-houri/gradle/libs.versions.toml. dev06 is the
+    // Dawn bump upstream made after our fork point: its newer Dawn carries the ImgTec/PowerVR
+    // and oversized-row copy workarounds that stop the swapchain wedging on those devices
+    // (issue #90). The app used to pin dev05 while the library compiled against dev06.
+    implementation("androidx.webgpu:webgpu:1.0.0-dev06")
     implementation(libs.imagedecoder)
     implementation(libs.kim)
     // Mihon <--
