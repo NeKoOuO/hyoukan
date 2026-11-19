@@ -575,6 +575,20 @@ Strip and continuous reading use separate image processors (split 2026-08-31):
 `PagerPageImageProcessor.kt`, `PagerJoinedItemsBuilder.kt`, `WebtoonPageImageProcessor.kt`.
 `WebtoonBaseHolder.viewer` is public for cross-holder access. Keep the two paths separate.
 
+### The SSIV tiled decoder is a binary dependency on `tachiyomi.decoder.ImageDecoder` (KMK)
+
+`ReaderPageImageView` hands non-animated pages to the `subsampling-scale-image-view` fork as a
+stream, and SSIV tiles anything larger than `ImageUtil.hardwareBitmapThreshold`. Its
+`TilesInitTask` builds `com.davemorrissey.labs.subscaleview.decoder.Decoder`, which is compiled
+against `tachiyomi.decoder.ImageDecoder` — the class that disappeared when the app moved to
+`ca.mpreg:imagedecoder` as its only decoder. Small pages never tile, so the reader worked until a
+tall page arrived; then it crashed with
+`NoClassDefFoundError: Failed resolution of: Ltachiyomi/decoder/ImageDecoder;` (issue #91).
+`core/common/src/main/kotlin/tachiyomi/decoder/ImageDecoder.kt` now supplies exactly that ABI over
+the MPReg decoder. **Do not delete it as unused code** — nothing in Kotlin calls it, only the
+library's bytecode does, and the R8 keep rule exists for the same reason. If SSIV is ever replaced
+with a build whose tile decoder uses `BitmapRegionDecoder`, the bridge goes with it.
+
 ## Zoom gating — which setting owns which gesture
 
 The legacy viewers have two zoom opt-outs (pinch-to-zoom, double-tap zoom) plus "disable zoom

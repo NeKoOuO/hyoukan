@@ -180,6 +180,12 @@
 # decode() and encode() are native; R8 renaming/stripping breaks JNI binding.
 -keep class ca.mpreg.imagedecoder.** { *; }
 
+# SSIV's tiled decoder was compiled against `tachiyomi.decoder.ImageDecoder` and resolves it
+# from its own desugared bytecode. The class is the app's compatibility bridge over the MPReg
+# decoder; shrinking or renaming it brings back the paged-reader NoClassDefFoundError that
+# crashed every tall page.
+-keep class tachiyomi.decoder.** { *; }
+
 # Yakuyomi engine — ships only ONNX keep rules of its own. The engine uses two
 # JNI backends with static symbol binding (Java_li_joye_yakuyomi_engine_* and
 # Java_ai_onnxruntime_*), so the native methods AND the classes that declare them
