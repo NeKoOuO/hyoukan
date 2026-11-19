@@ -1,7 +1,11 @@
 package eu.kanade.tachiyomi.ui.setting
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -24,14 +28,18 @@ import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -185,7 +193,8 @@ fun SettingsScreen() {
                     .takeIf { it > -1 } // Don't trigger if route for right side hasn't been added yet
                     ?.also {
                         LaunchedEffect(Unit) {
-                            state.animateScrollToItem(it)
+                            // +1 for the search row above the sections.
+                            state.animateScrollToItem(it + 1)
                             if (it > 0) {
                                 // Lift scroll
                                 topBarState.contentOffset = topBarState.heightOffsetLimit
@@ -200,6 +209,37 @@ fun SettingsScreen() {
                 state = state,
                 contentPadding = contentPadding,
             ) {
+                // KMK --> Search is the fastest way into a deep settings tree; keeping it only in
+                // the app bar made it look like a generic action. A full-width row above the
+                // sections is the shape every settings app uses, and it opens the same screen.
+                item(key = "settings-search") {
+                    Surface(
+                        shape = RoundedCornerShape(28.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .clickable { backStack.navigate(SettingsSearchRoute, isTabletUi) },
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Search,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                text = stringResource(MR.strings.action_search_settings),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                    }
+                }
+                // KMK <--
                 itemsIndexed(
                     items = items,
                     key = { _, item -> item.route.hashCode() },

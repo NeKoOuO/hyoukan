@@ -172,6 +172,15 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
         graph.inject(this)
 
+        // KMK --> Repair the "exactly one launcher alias" invariant before the launcher can draw a
+        // stale or missing icon (upgrade, restore, or a crash between enabling the new alias and
+        // disabling the old one). Touching the host registers its keys with SettingsRegistry.
+        runCatching { eu.kanade.tachiyomi.data.personalization.AppIdentitySettingsHost }
+            .onFailure { xLogE("Failed to register app identity settings", it) }
+        runCatching { globalAppGraph.appIconManager.sync() }
+            .onFailure { xLogE("App icon sync failed", it) }
+        // KMK <--
+
         // KMK --> single AppDispatchers instance for GlobalScope helpers + DI
         mihon.core.concurrency.AppDispatchersHolder.set(globalAppGraph.appDispatchers)
         // KMK <--

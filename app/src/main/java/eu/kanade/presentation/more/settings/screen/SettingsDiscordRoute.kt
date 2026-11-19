@@ -53,7 +53,7 @@ data object SettingsDiscordRoute : NavKey, SearchableRoute {
     @Suppress("unused")
     @ReadOnlyComposable
     @Composable
-    override fun getTitleRes() = KMR.strings.pref_category_connections
+    override fun getTitleRes() = KMR.strings.pref_discord_rpc
 
     @Composable
     override fun RowScope.AppBarAction() {

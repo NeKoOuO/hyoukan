@@ -68,12 +68,6 @@
             android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/Theme.Tachiyomi.SplashScreen">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-
             <!-- Legacy deeplink to add extension store -->
             <intent-filter android:label="@string/action_addExtensionStore">
                 <action android:name="android.intent.action.VIEW" />
@@ -128,6 +122,133 @@
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
         </activity>
+
+        <!--
+          KMK: Swappable launcher entry points.
+
+          Android has no API to change an installed app's icon or label at runtime: both are read
+          from the manifest component that the launcher starts. Each built-in icon (and its name)
+          therefore has to be its own <activity-alias>, and choosing an icon means enabling one
+          alias and disabling the rest. The aliases all target MainActivity; only the component the
+          launcher shows differs.
+
+          Keep the ids in AppIconManager's list in sync with the names below. A new built-in icon is
+          a new alias here, a mipmap resource, and one entry in that list - nothing else.
+        -->
+        <activity-alias
+            android:name=".ui.main.MainActivityDefault"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher"
+            android:targetActivity=".ui.main.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- KMK: static launcher shortcuts ride the enabled alias, not MainActivity. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity-alias>
+
+        <activity-alias
+            android:name=".ui.main.MainActivityMidnight"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_midnight"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_midnight"
+            android:targetActivity=".ui.main.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- KMK: static launcher shortcuts ride the enabled alias, not MainActivity. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity-alias>
+
+        <activity-alias
+            android:name=".ui.main.MainActivitySakura"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_sakura"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_sakura"
+            android:targetActivity=".ui.main.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- KMK: static launcher shortcuts ride the enabled alias, not MainActivity. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity-alias>
+
+        <activity-alias
+            android:name=".ui.main.MainActivityOcean"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_ocean"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_ocean"
+            android:targetActivity=".ui.main.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- KMK: static launcher shortcuts ride the enabled alias, not MainActivity. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity-alias>
+
+        <activity-alias
+            android:name=".ui.main.MainActivityEmber"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_ember"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_ember"
+            android:targetActivity=".ui.main.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- KMK: static launcher shortcuts ride the enabled alias, not MainActivity. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity-alias>
+
+        <activity-alias
+            android:name=".ui.main.MainActivityPaper"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_paper"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_paper"
+            android:targetActivity=".ui.main.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- KMK: static launcher shortcuts ride the enabled alias, not MainActivity. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity-alias>
+        <!-- KMK: end app icon aliases -->
 
         <activity
             android:name=".crash.CrashActivity"

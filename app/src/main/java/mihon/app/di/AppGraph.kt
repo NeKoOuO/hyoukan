@@ -310,6 +310,8 @@ interface AppGraph : ViewModelGraph {
     val getSequelPrequel: GetSequelPrequel
     // Picking books off the device and filing them into the local source.
     val localBookImporter: tachiyomi.source.local.io.LocalBookImporter
+    // Launcher icon/name personalization: which alias is enabled, and the custom shortcut.
+    val appIconManager: eu.kanade.tachiyomi.data.personalization.AppIconManager
     // KMK <--
 
     // KMK -->

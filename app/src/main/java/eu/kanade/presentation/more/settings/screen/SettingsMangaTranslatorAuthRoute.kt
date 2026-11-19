@@ -3,14 +3,15 @@ package eu.kanade.presentation.more.settings.screen
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -23,14 +24,22 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavKey
+import eu.kanade.presentation.components.AppBar
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import mihon.app.di.globalAppGraph
+import mihon.core.navigation.util.LocalBackButtonVisibility
 import mihon.core.navigation.util.LocalBackStack
+import tachiyomi.core.common.i18n.stringResource
+import tachiyomi.i18n.kmk.KMR
+import tachiyomi.presentation.core.components.material.Scaffold
+import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.collectAsState
 
 @Serializable
@@ -40,6 +49,7 @@ data object SettingsMangaTranslatorAuthRoute : NavKey
 fun SettingsMangaTranslatorAuthScreen() {
     val context = LocalContext.current
     val backStack = LocalBackStack.current
+    val backVisibility = LocalBackButtonVisibility.current
     val prefs = remember { globalAppGraph.translationPreferences }
     val service = remember { globalAppGraph.mangaTranslatorService }
     val scope = rememberCoroutineScope()
@@ -53,142 +63,194 @@ fun SettingsMangaTranslatorAuthScreen() {
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
-    // Keep email field in sync when navigating back
+    // Keep the email field in sync when navigating back.
     LaunchedEffect(savedEmail) { email = savedEmail }
 
-    // Fetch current user on enter if logged in
+    // Fetch the current user on enter if a session already exists.
     LaunchedEffect(hasToken) {
         if (hasToken.isNotBlank()) {
-            status = "Checking session…"
+            status = context.stringResource(KMR.strings.manga_translator_checking_session)
             try {
                 val user = service.getCurrentUser()
                 status = if (user != null) {
-                    "Logged in as ${user.email ?: "anonymous"} · tier: ${user.subscriptionTier}"
+                    context.stringResource(
+                        KMR.strings.manga_translator_logged_in_as,
+                        user.email ?: context.stringResource(KMR.strings.manga_translator_anonymous_name),
+                        user.subscriptionTier,
+                    )
                 } else {
-                    "Session token present but server did not return user — try re-logging in"
+                    context.stringResource(KMR.strings.manga_translator_session_stale)
                 }
             } catch (e: Exception) {
-                status = "Session check failed: ${e.message}"
+                status = context.stringResource(KMR.strings.manga_translator_session_failed, e.message.orEmpty())
             }
         } else {
-            status = "Not logged in — translations work anonymously but quota is limited. Log in at ichigo.moe for more."
+            status = context.stringResource(KMR.strings.manga_translator_not_logged_in)
         }
     }
 
-    Column(
-        modifier = Modifier
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(text = "MangaTranslator Account", style = MaterialTheme.typography.titleLarge)
-        Text(
-            text = "Same account as the Chrome extension (ichigo.moe / mangatranslator.ai). " +
-                "The app stores only a session token (no API key) — just like the extension does via its access_cookie. " +
-                "Anonymous use is allowed but rate-limited; logging in uses your site quota.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        if (hasToken.isNotBlank()) {
-            Text(
-                text = "● Logged in token present (${hasToken.take(6)}…)",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
+    fun signIn() {
+        busy = true
+        scope.launch {
+            try {
+                status = when (val result = service.login(email.trim(), password)) {
+                    exh.yakuyomi.LoginResult.Success -> {
+                        prefs.mangaTranslatorEmail().set(email.trim())
+                        context.toast(KMR.strings.manga_translator_signed_in_toast)
+                        context.stringResource(
+                            KMR.strings.manga_translator_login_success,
+                            service.getCurrentUser()?.subscriptionTier
+                                ?: context.stringResource(KMR.strings.manga_translator_free_tier),
+                        )
+                    }
+                    exh.yakuyomi.LoginResult.BadPassword ->
+                        context.stringResource(KMR.strings.manga_translator_login_bad_password)
+                    exh.yakuyomi.LoginResult.UnknownEmail ->
+                        context.stringResource(KMR.strings.manga_translator_login_unknown_email)
+                    exh.yakuyomi.LoginResult.InvalidEmail ->
+                        context.stringResource(KMR.strings.manga_translator_invalid_email)
+                    exh.yakuyomi.LoginResult.RateLimited ->
+                        context.stringResource(KMR.strings.manga_translator_rate_limited)
+                    exh.yakuyomi.LoginResult.Unknown ->
+                        context.stringResource(KMR.strings.manga_translator_login_unknown)
+                }
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    fun signUp() {
+        busy = true
+        scope.launch {
+            try {
+                status = when (val result = service.signup(email.trim(), password)) {
+                    exh.yakuyomi.SignupResult.Success -> {
+                        prefs.mangaTranslatorEmail().set(email.trim())
+                        context.toast(KMR.strings.manga_translator_signed_up_toast)
+                        context.stringResource(KMR.strings.manga_translator_signup_success)
+                    }
+                    exh.yakuyomi.SignupResult.EmailTaken ->
+                        context.stringResource(KMR.strings.manga_translator_signup_email_taken)
+                    exh.yakuyomi.SignupResult.InvalidEmail ->
+                        context.stringResource(KMR.strings.manga_translator_invalid_email)
+                    exh.yakuyomi.SignupResult.RateLimited ->
+                        context.stringResource(KMR.strings.manga_translator_rate_limited)
+                    exh.yakuyomi.SignupResult.Unknown ->
+                        context.stringResource(KMR.strings.manga_translator_signup_failed)
+                }
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    fun signOut() {
+        busy = true
+        scope.launch {
+            try {
+                service.logout()
+                status = context.stringResource(KMR.strings.manga_translator_signed_out)
+                context.toast(KMR.strings.manga_translator_signed_out_toast)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = { scrollBehavior ->
+            AppBar(
+                title = stringResource(KMR.strings.manga_translator_account_title),
+                navigateUp = {
+                    backStack.removeLastOrNull()
+                    Unit
+                }.takeIf { backVisibility },
+                scrollBehavior = scrollBehavior,
             )
-        } else {
-            Text(text = "○ No session token — anonymous mode", style = MaterialTheme.typography.bodySmall)
+        },
+    ) { contentPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(contentPadding)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = stringResource(KMR.strings.manga_translator_account_summary),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = if (hasToken.isNotBlank()) {
+                    stringResource(KMR.strings.manga_translator_logged_in_token, hasToken.take(6))
+                } else {
+                    stringResource(KMR.strings.manga_translator_anonymous)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (hasToken.isNotBlank()) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+            status?.let {
+                Text(text = it, style = MaterialTheme.typography.bodyMedium)
+            }
+
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text(stringResource(KMR.strings.manga_translator_email)) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Email,
+                    imeAction = ImeAction.Next,
+                ),
+            )
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text(stringResource(KMR.strings.manga_translator_password)) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Done,
+                ),
+            )
+
+            val credentialsReady = !busy && email.contains("@") && password.length >= 6
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    enabled = credentialsReady,
+                    onClick = ::signIn,
+                ) {
+                    Text(stringResource(KMR.strings.manga_translator_sign_in))
+                }
+                OutlinedButton(
+                    enabled = credentialsReady,
+                    onClick = ::signUp,
+                ) {
+                    Text(stringResource(KMR.strings.manga_translator_sign_up))
+                }
+                TextButton(
+                    enabled = !busy && hasToken.isNotBlank(),
+                    onClick = ::signOut,
+                ) {
+                    Text(stringResource(KMR.strings.manga_translator_sign_out))
+                }
+            }
+
+            Text(
+                text = stringResource(KMR.strings.manga_translator_fingerprint_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-        status?.let { Text(text = it, style = MaterialTheme.typography.bodyMedium) }
-
-        OutlinedTextField(
-            value = email,
-            onValueChange = { email = it },
-            label = { Text("Email") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-        )
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text("Password") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-        )
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(
-                enabled = !busy && email.contains("@") && password.length >= 6,
-                onClick = {
-                    busy = true
-                    scope.launch {
-                        try {
-                            val result = service.login(email.trim(), password)
-                            status = when (result) {
-                                exh.yakuyomi.LoginResult.Success -> "Login success — ${service.getCurrentUser()?.subscriptionTier ?: "free"} tier"
-                                exh.yakuyomi.LoginResult.BadPassword -> "Login failed: bad password"
-                                exh.yakuyomi.LoginResult.UnknownEmail -> "Login failed: unknown email"
-                                exh.yakuyomi.LoginResult.InvalidEmail -> "Invalid email format"
-                                exh.yakuyomi.LoginResult.RateLimited -> "Rate limited — try again later"
-                                exh.yakuyomi.LoginResult.Unknown -> "Login failed — check connection or credentials"
-                            }
-                            if (result == exh.yakuyomi.LoginResult.Success) {
-                                prefs.mangaTranslatorEmail().set(email.trim())
-                                context.toast("Logged in")
-                            }
-                        } finally {
-                            busy = false
-                        }
-                    }
-                },
-            ) { Text(if (busy) "…" else "Log in") }
-
-            TextButton(
-                enabled = !busy && email.contains("@") && password.length >= 6,
-                onClick = {
-                    busy = true
-                    scope.launch {
-                        try {
-                            val result = service.signup(email.trim(), password)
-                            status = when (result) {
-                                exh.yakuyomi.SignupResult.Success -> "Signup success — logged in"
-                                exh.yakuyomi.SignupResult.EmailTaken -> "Signup failed: email already taken"
-                                exh.yakuyomi.SignupResult.InvalidEmail -> "Invalid email"
-                                exh.yakuyomi.SignupResult.RateLimited -> "Rate limited"
-                                exh.yakuyomi.SignupResult.Unknown -> "Signup failed"
-                            }
-                            if (result == exh.yakuyomi.SignupResult.Success) {
-                                prefs.mangaTranslatorEmail().set(email.trim())
-                                context.toast("Signed up")
-                            }
-                        } finally {
-                            busy = false
-                        }
-                    }
-                },
-            ) { Text("Sign up") }
-
-            TextButton(
-                enabled = !busy && hasToken.isNotBlank(),
-                onClick = {
-                    busy = true
-                    scope.launch {
-                        try {
-                            service.logout()
-                            status = "Logged out — anonymous mode"
-                            context.toast("Logged out")
-                        } finally {
-                            busy = false
-                        }
-                    }
-                },
-            ) { Text("Log out") }
-        }
-
-        Text(
-            text = "Fingerprint and client ID are stored locally (like the extension) and sent with each translation to identify your device — not your reading history. Base URL must be https; private hosts are rejected.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        TextButton(onClick = { backStack.removeLastOrNull() }) { Text("Back") }
     }
 }

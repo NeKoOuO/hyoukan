@@ -463,6 +463,11 @@ fun EntryProviderScope<NavKey>.appEntries() {
     entry<SettingsAppearanceRoute> {
         SettingsAppearanceRoute.Content()
     }
+    // KMK --> Launcher icon and custom name
+    entry<eu.kanade.presentation.more.settings.screen.SettingsAppIdentityRoute> {
+        eu.kanade.presentation.more.settings.screen.SettingsAppIdentityRoute.Content()
+    }
+    // KMK <--
     entry<SettingsLibraryRoute> {
         SettingsLibraryRoute.Content()
     }

@@ -2,14 +2,15 @@ package eu.kanade.presentation.more.settings.screen
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -24,11 +25,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavKey
+import eu.kanade.presentation.components.AppBar
+import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.tachiyomi.util.system.toast
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.serialization.Serializable
 import mihon.app.di.globalAppGraph
+import mihon.core.navigation.util.LocalBackButtonVisibility
 import mihon.core.navigation.util.LocalBackStack
+import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.lang.withIOContext
+import tachiyomi.i18n.kmk.KMR
+import tachiyomi.presentation.core.components.material.Scaffold
+import tachiyomi.presentation.core.i18n.stringResource
 import java.io.File
 
 @Serializable
@@ -48,6 +57,7 @@ private fun savedPagesDir(context: android.content.Context): File =
 fun SettingsMangaTranslatorCacheScreen() {
     val context = LocalContext.current
     val backStack = LocalBackStack.current
+    val backVisibility = LocalBackButtonVisibility.current
     var entries by remember { mutableStateOf<List<CacheEntry>>(emptyList()) }
     var refreshTick by remember { mutableStateOf(0) }
 
@@ -55,44 +65,134 @@ fun SettingsMangaTranslatorCacheScreen() {
         entries = withIOContext { listSavedEntries(context) }
     }
 
-    Column(
-        modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(text = "Per-Manga Translation Cache", style = MaterialTheme.typography.titleLarge)
-        Text(
-            text = "Wipe translated pages for a specific manga — works even after removing it from library. Saved translations are cached permanently under filesDir/mtl_pages/saved/. Tap Wipe to delete all translated pages for that manga.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = {
-                globalAppGraph.mtlPageStore.clear()
-                context.toast("All translation cache cleared")
+    Scaffold(
+        topBar = { scrollBehavior ->
+            AppBar(
+                title = stringResource(KMR.strings.manga_translator_cache_title),
+                navigateUp = {
+                    backStack.removeLastOrNull()
+                    Unit
+                }.takeIf { backVisibility },
+                actions = {
+                    AppBarActions(
+                        persistentListOf<AppBar.AppBarAction>(
+                            AppBar.Action(
+                                title = stringResource(KMR.strings.manga_translator_cache_clear_all),
+                                icon = Icons.Outlined.DeleteSweep,
+                                onClick = {
+                                    globalAppGraph.mtlPageStore.clear()
+                                    context.toast(KMR.strings.manga_translator_cache_cleared)
+                                    refreshTick++
+                                },
+                            ),
+                        ),
+                    )
+                },
+                scrollBehavior = scrollBehavior,
+            )
+        },
+    ) { contentPadding ->
+        CacheContent(
+            entries = entries,
+            contentPadding = contentPadding,
+            onWipe = { entry ->
+                wipeSavedPages(context, entry.mangaId)
+                context.toast(
+                    context.stringResource(
+                        KMR.strings.manga_translator_cache_wiped,
+                        entry.title ?: entry.mangaId.toString(),
+                    ),
+                )
                 refreshTick++
-            }) { Text("Clear All") }
-            TextButton(onClick = { backStack.removeLastOrNull() }) { Text("Back") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun CacheContent(
+    entries: List<CacheEntry>,
+    contentPadding: PaddingValues,
+    onWipe: (CacheEntry) -> Unit,
+) {
+    if (entries.isEmpty()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding)
+                .padding(horizontal = 16.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(KMR.strings.manga_translator_cache_summary),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = stringResource(KMR.strings.manga_translator_cache_empty),
+                style = MaterialTheme.typography.bodyLarge,
+            )
         }
-        if (entries.isEmpty()) {
-            Text(text = "No cached translations", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 24.dp))
-            return@Column
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = contentPadding,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            Text(
+                text = stringResource(KMR.strings.manga_translator_cache_summary),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-        Text(text = "${entries.size} manga with cached translations", style = MaterialTheme.typography.bodyMedium)
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(entries) { entry ->
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(text = entry.title ?: "Manga ${entry.mangaId}", style = MaterialTheme.typography.titleSmall)
-                        Text(text = "${entry.chapters} chapters · ${entry.pages} pages · ${entry.sizeKb} KB", style = MaterialTheme.typography.bodySmall)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = {
-                                wipeSavedPages(context, entry.mangaId)
-                                context.toast("Wiped manga ${entry.mangaId}")
-                                refreshTick++
-                            }) { Text("Wipe") }
+        item {
+            Text(
+                text = stringResource(KMR.strings.manga_translator_cache_count, entries.size),
+                modifier = Modifier.padding(horizontal = 16.dp),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        items(entries, key = { it.mangaId }) { entry ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = entry.title ?: stringResource(
+                            KMR.strings.manga_translator_cache_manga,
+                            entry.mangaId,
+                        ),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(
+                        text = stringResource(
+                            KMR.strings.manga_translator_cache_entry_summary,
+                            entry.chapters,
+                            entry.pages,
+                            entry.sizeKb,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { onWipe(entry) }) {
+                            Text(stringResource(KMR.strings.manga_translator_cache_wipe))
                         }
                     }
                 }
             }
+        }
+        item {
+            androidx.compose.foundation.layout.Spacer(modifier = Modifier.padding(bottom = 16.dp))
         }
     }
 }
