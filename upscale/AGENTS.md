@@ -37,6 +37,12 @@ backends it drives.
   one implementation.
 - **Cache identity:** `nativeKey` includes factor + modelId + preset + backend + format +
   artifact hashes; `simpleKey` includes algo + mode. Model/backend changes self-invalidate.
+- **A coroutine launched from `init` can run before the constructor returns.** Kotlin
+  initializes properties in declaration order, so a collector that touches a property declared
+  *below* the `init` block sees it as `null`. `PrefsUpscaleConfigSource` crashed the reader this
+  way: `synchronized(categoryCache)` ran while `categoryCache` was still uninitialized, which is
+  a `NullPointerException: Null reference used for synchronization`. Any state a constructor
+  coroutine touches belongs above its `init` block.
 - JNI work: check `upscale/src/main/cpp/CMakeLists.txt` — the NCNN archives resolve from
   `external/yakuyomi-engine/engine/src/main/cpp/ncnn`; there is deliberately still only one
   NCNN checkout.

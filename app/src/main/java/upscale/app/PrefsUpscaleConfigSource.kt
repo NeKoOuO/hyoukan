@@ -36,6 +36,15 @@ class PrefsUpscaleConfigSource(
 
     private val store: UpscaleMangaStore get() = preferences.mangaStore
 
+    // Declared before the `init` block on purpose: Kotlin initializes properties in declaration
+    // order, and the collector launched below can run before the constructor returns. It ran here
+    // while `categoryCache` was still null, and `synchronized(null)` is a NullPointerException
+    // ("Null reference used for synchronization") on the reader's per-page path. Moving the
+    // property up is what makes the collector's first emission safe, not the dispatch itself.
+    private val categoryCache = object : LinkedHashMap<Long, Any>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Any>?): Boolean = size > CACHE_MAX
+    }
+
     init {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         scope.launch {
@@ -98,10 +107,6 @@ class PrefsUpscaleConfigSource(
             logcat(LogPriority.DEBUG) { "Upscale category lookup failed for $mangaId: ${e.message}" }
             null
         }
-    }
-
-    private val categoryCache = object : LinkedHashMap<Long, Any>() {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Any>?): Boolean = size > CACHE_MAX
     }
 
     private fun parseMode(raw: String): UpscaleMode = when (raw) {
