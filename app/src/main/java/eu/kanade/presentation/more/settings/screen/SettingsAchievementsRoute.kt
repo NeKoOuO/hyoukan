@@ -1,24 +1,19 @@
 package eu.kanade.presentation.more.settings.screen
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,6 +42,7 @@ import tachiyomi.domain.achievement.model.Achievement
 import tachiyomi.domain.achievement.model.AchievementProgress
 import tachiyomi.domain.achievement.model.AchievementTier
 import tachiyomi.domain.achievement.model.Achievements
+import tachiyomi.i18n.MR
 import tachiyomi.i18n.kmk.KMR
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.collectAsState
@@ -105,58 +101,91 @@ data object SettingsAchievementsRoute : NavKey, SearchableRoute {
         if (showWipeFirst) {
             AlertDialog(
                 onDismissRequest = { showWipeFirst = false },
-                title = { Text("Reset achievements?") },
-                text = { Text("This will wipe all achievement progress and stats. Are you sure?") },
+                title = { Text(stringResource(KMR.strings.achievements_reset_title)) },
+                text = { Text(stringResource(KMR.strings.achievements_reset_message)) },
                 confirmButton = {
                     TextButton(onClick = {
                         showWipeFirst = false
                         showWipeSecond = true
-                    }) { Text("Yes, continue") }
+                    }) { Text(stringResource(KMR.strings.achievements_continue)) }
                 },
-                dismissButton = { TextButton(onClick = { showWipeFirst = false }) { Text("Cancel") } },
+                dismissButton = {
+                    TextButton(onClick = { showWipeFirst = false }) {
+                        Text(stringResource(MR.strings.action_cancel))
+                    }
+                },
             )
         }
         if (showWipeSecond) {
             AlertDialog(
                 onDismissRequest = { showWipeSecond = false },
-                title = { Text("Are you REALLY sure?") },
-                text = { Text("This cannot be undone. All ${Achievements.all.size} achievements will be locked again.") },
+                title = { Text(stringResource(KMR.strings.achievements_really_sure_title)) },
+                text = {
+                    Text(
+                        stringResource(
+                            KMR.strings.achievements_really_sure_message,
+                            Achievements.all.size,
+                        ),
+                    )
+                },
                 confirmButton = {
                     TextButton(onClick = {
                         showWipeSecond = false
                         scope.launch {
                             globalAppGraph.achievementManager.wipeWithConfirmation(true, true)
-                            context.toast("Achievements wiped")
+                            context.toast(KMR.strings.achievements_wiped_toast)
                         }
-                    }) { Text("Wipe everything") }
+                    }) { Text(stringResource(KMR.strings.achievements_wipe_everything)) }
                 },
-                dismissButton = { TextButton(onClick = { showWipeSecond = false }) { Text("Cancel") } },
+                dismissButton = {
+                    TextButton(onClick = { showWipeSecond = false }) {
+                        Text(stringResource(MR.strings.action_cancel))
+                    }
+                },
             )
         }
 
         return Preference.PreferenceGroup(
-            title = stringResource(tachiyomi.i18n.MR.strings.pref_category_general),
+            title = stringResource(MR.strings.pref_category_general),
             preferenceItems = persistentListOf(
                 Preference.PreferenceItem.SwitchPreference(
                     preference = prefs.achievementsEnabled(),
-                    title = "Enable achievements",
-                    subtitle = if (enabled) "Achievements are enabled" else "Achievements disabled — no tracking or popups",
+                    title = stringResource(KMR.strings.achievements_enable_title),
+                    subtitle = stringResource(
+                        if (enabled) {
+                            KMR.strings.achievements_enabled_summary
+                        } else {
+                            KMR.strings.achievements_disabled_summary
+                        },
+                    ),
                 ),
                 Preference.PreferenceItem.SwitchPreference(
                     preference = prefs.achievementToastsEnabled(),
-                    title = "Achievement popups",
-                    subtitle = if (toastsEnabled) "Show toast when you unlock an achievement" else "Toasts disabled",
+                    title = stringResource(KMR.strings.achievements_popups_title),
+                    subtitle = stringResource(
+                        if (toastsEnabled) {
+                            KMR.strings.achievements_popups_on
+                        } else {
+                            KMR.strings.achievements_popups_off
+                        },
+                    ),
                     enabled = enabled,
                 ),
                 Preference.PreferenceItem.SwitchPreference(
                     preference = prefs.achievementSoundsEnabled(),
-                    title = "Achievement sounds",
-                    subtitle = if (soundsEnabled) "Play a chime per tier (bronze→mythic)" else "Sounds muted",
+                    title = stringResource(KMR.strings.achievements_sounds_title),
+                    subtitle = stringResource(
+                        if (soundsEnabled) {
+                            KMR.strings.achievements_sounds_on
+                        } else {
+                            KMR.strings.achievements_sounds_off
+                        },
+                    ),
                     enabled = enabled,
                 ),
                 Preference.PreferenceItem.TextPreference(
-                    title = "Wipe achievement data",
-                    subtitle = "Double confirmation required",
+                    title = stringResource(KMR.strings.achievements_wipe_data),
+                    subtitle = stringResource(KMR.strings.achievements_wipe_data_summary),
                     onClick = { showWipeFirst = true },
                     enabled = enabled,
                 ),
@@ -179,31 +208,36 @@ data object SettingsAchievementsRoute : NavKey, SearchableRoute {
         val canAnimate = animationsEnabled && animationsReady
 
         return Preference.PreferenceGroup(
-            title = stringResource(KMR.strings.label_achievements),
+            title = stringResource(KMR.strings.achievements_all_title),
             preferenceItems = persistentListOf(
                 Preference.PreferenceItem.CustomPreference(
                     title = "",
                     content = {
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(2),
+                        // A plain FlowRow, not a LazyVerticalGrid: this page already scrolls as a
+                        // settings list, and an 800dp inner scroller meant two scrolling surfaces
+                        // fighting each other plus a fixed band of empty space on small screens.
+                        FlowRow(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(800.dp)
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
+                            maxItemsInEachRow = 2,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
-                            userScrollEnabled = true,
                         ) {
-                            items(all, key = { it.id }) { ach ->
+                            all.forEach { ach ->
                                 val isUnlocked = ach.id in unlockedSet
-                                val display = remember(ach, isUnlocked) { ach.copy(unlockedAt = if (isUnlocked) 1L else null) }
+                                val display = remember(ach, isUnlocked) {
+                                    ach.copy(unlockedAt = if (isUnlocked) 1L else null)
+                                }
                                 val progress = rememberTierProgress(canAnimate && isUnlocked, ach.tier)
-                                AchievementCardSimple(
-                                    achievement = display,
-                                    isUnlocked = isUnlocked,
-                                    animationsEnabled = canAnimate,
-                                    progress = progress,
-                                )
+                                Box(modifier = Modifier.weight(1f)) {
+                                    AchievementCardSimple(
+                                        achievement = display,
+                                        isUnlocked = isUnlocked,
+                                        animationsEnabled = canAnimate,
+                                        progress = progress,
+                                    )
+                                }
                             }
                         }
                     },
@@ -238,14 +272,20 @@ data object SettingsAchievementsRoute : NavKey, SearchableRoute {
                 }
                 Text(text = stringResource(KMR.strings.achievements_rank_prefix, stats.rank), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 4.dp)) {
-                    StatChipCompact(label = "Read", value = "${stats.organicChaptersRead}")
-                    StatChipCompact(label = "Finished", value = "${stats.mangaFinished}")
-                    StatChipCompact(label = "Library", value = "${stats.libraryCount}")
-                    StatChipCompact(label = "Hours", value = "${stats.readingTimeMinutes / 60}")
-                    if (stats.negativeUnlocked > 0) StatChipCompact(label = "Neg", value = "${stats.negativeUnlocked}")
+                    StatChipCompact(label = stringResource(KMR.strings.achievements_stat_read), value = "${stats.organicChaptersRead}")
+                    StatChipCompact(label = stringResource(KMR.strings.achievements_stat_finished), value = "${stats.mangaFinished}")
+                    StatChipCompact(label = stringResource(KMR.strings.achievements_stat_library), value = "${stats.libraryCount}")
+                    StatChipCompact(label = stringResource(KMR.strings.achievements_stat_hours), value = "${stats.readingTimeMinutes / 60}")
+                    if (stats.negativeUnlocked > 0) {
+                        StatChipCompact(label = stringResource(KMR.strings.achievements_stat_negative), value = "${stats.negativeUnlocked}")
+                    }
                 }
                 if (stats.backlogCount > 0) {
-                    Text(text = "Backlog: ${stats.backlogCount}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = stringResource(KMR.strings.achievements_backlog, stats.backlogCount),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
@@ -289,7 +329,10 @@ data object SettingsAchievementsRoute : NavKey, SearchableRoute {
         } else {
             Modifier
         }
-        val cardModifier = Modifier.alpha(alpha).then(animatedModifier)
+        val cardModifier = Modifier
+            .fillMaxWidth()
+            .alpha(alpha)
+            .then(animatedModifier)
         androidx.compose.material3.Card(
             modifier = cardModifier,
             shape = RoundedCornerShape(12.dp),
@@ -308,13 +351,31 @@ data object SettingsAchievementsRoute : NavKey, SearchableRoute {
                         Text(text = progressLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (achievement.isSecret) {
-                        Text(text = if (isUnlocked) "Secret • Unlocked" else "Secret", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = stringResource(
+                                if (isUnlocked) {
+                                    KMR.strings.achievements_secret_unlocked
+                                } else {
+                                    KMR.strings.achievements_secret
+                                },
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                     if (achievement.isNegative) {
-                        Text(text = "Negative • No rank points", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                        Text(
+                            text = stringResource(KMR.strings.achievements_negative_badge),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
                     }
                     if (achievement.isRotating) {
-                        Text(text = "Rotating", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                        Text(
+                            text = stringResource(KMR.strings.achievements_rotating_badge),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                        )
                     }
                 }
             }

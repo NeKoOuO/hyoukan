@@ -89,31 +89,43 @@ data object SettingsYakuyomiRoute : NavKey, SearchableRoute {
 
         val isNomtl = eu.kanade.tachiyomi.BuildConfig.IS_NOMTL
         val (dotColor, lines) = when {
-            !enabled -> Color(0xFF9E9E9E) to listOf("MTL is off — enable it below to translate pages")
+            !enabled -> Color(0xFF9E9E9E) to listOf(stringResource(KMR.strings.yakuyomi_status_off))
             isNomtl -> {
                 val mt = prefs.mangaTranslatorEnabled().collectAsState().value
                 when {
-                    mt || provider == "mangatranslator" -> Color(0xFF4CAF50) to listOf("Off-device: MangaTranslator ready — no local engine needed")
-                    else -> Color(0xFFE53935) to listOf("No-MTL build — enable MangaTranslator for off-device translation")
+                    mt || provider == "mangatranslator" -> Color(0xFF4CAF50) to
+                        listOf(stringResource(KMR.strings.yakuyomi_status_nomtl_ready))
+                    else -> Color(0xFFE53935) to
+                        listOf(stringResource(KMR.strings.yakuyomi_status_nomtl_missing))
                 }
             }
             provider == "local" -> {
+                val modelName = resolvedLocalModel?.displayName
+                    ?: stringResource(KMR.strings.yakuyomi_status_model_auto)
                 when {
-                    loading -> Color(0xFFFFA726) to listOf("Local engine: starting…")
-                    running -> Color(0xFF4CAF50) to listOf("Local engine running — ${resolvedLocalModel?.displayName ?: "unknown model"}")
-                    isModelReady -> Color(0xFF9E9E9E) to listOf("Local engine stopped — ${resolvedLocalModel?.displayName ?: "auto"} ready")
-                    else -> Color(0xFFE53935) to listOf("Local provider: no model downloaded yet")
+                    loading -> Color(0xFFFFA726) to listOf(stringResource(KMR.strings.yakuyomi_status_local_starting))
+                    running -> Color(0xFF4CAF50) to
+                        listOf(stringResource(KMR.strings.yakuyomi_status_local_running, modelName))
+                    isModelReady -> Color(0xFF9E9E9E) to
+                        listOf(stringResource(KMR.strings.yakuyomi_status_local_stopped, modelName))
+                    else -> Color(0xFFE53935) to
+                        listOf(stringResource(KMR.strings.yakuyomi_status_local_no_model))
                 }
             }
-            else -> Color(0xFF4CAF50) to listOf("Cloud provider: ${provider.ifBlank { "openrouter" }}")
+            else -> Color(0xFF4CAF50) to listOf(
+                stringResource(
+                    KMR.strings.yakuyomi_status_cloud,
+                    provider.ifBlank { "openrouter" },
+                ),
+            )
         }
 
         return Preference.PreferenceGroup(
-            title = "Status",
+            title = stringResource(KMR.strings.yakuyomi_status_title),
             preferenceItems = listOf(
                 Preference.PreferenceItem.CustomPreference(
                     // Only an index key — CustomPreference renders `content` alone.
-                    title = "Status",
+                    title = stringResource(KMR.strings.yakuyomi_status_title),
                     content = {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -163,8 +175,7 @@ data object SettingsYakuyomiRoute : NavKey, SearchableRoute {
                 if (lowRam) {
                     add(
                         Preference.PreferenceItem.InfoPreference(
-                            title = "This device has too little RAM for AI translation (needs 3GB+). " +
-                                "Translation is disabled to avoid crashes. Reading, downloads and all other features are unaffected.",
+                            title = stringResource(KMR.strings.yakuyomi_status_low_ram),
                         ),
                     )
                 }
@@ -258,7 +269,7 @@ data object SettingsYakuyomiRoute : NavKey, SearchableRoute {
         var cacheTick by remember { mutableStateOf(0) }
         val cacheBytes = remember(cacheTick, cacheEnabled) { cache.sizeBytes() }
         return Preference.PreferenceGroup(
-            title = "Behavior & Cache",
+            title = stringResource(KMR.strings.pref_yakuyomi_behavior_title),
             preferenceItems = buildList {
                 if (!hideLocal) {
                     add(
@@ -506,11 +517,11 @@ data object SettingsYakuyomiRoute : NavKey, SearchableRoute {
     private fun getSessionsGroup(): Preference.PreferenceGroup {
         val backStack = LocalBackStack.current
         return Preference.PreferenceGroup(
-            title = "Sessions",
+            title = stringResource(KMR.strings.yakuyomi_sessions_title),
             preferenceItems = persistentListOf(
                 Preference.PreferenceItem.TextPreference(
-                    title = "Manage active translations",
-                    subtitle = "Kill / Pause / Resume / Retry per chapter",
+                    title = stringResource(KMR.strings.yakuyomi_sessions_manage),
+                    subtitle = stringResource(KMR.strings.yakuyomi_sessions_manage_summary),
                     onClick = { backStack.add(SettingsTranslationSessionsRoute) },
                 ),
             ),

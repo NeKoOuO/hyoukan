@@ -49,7 +49,6 @@ import androidx.navigation3.runtime.NavKey
 import eu.kanade.presentation.components.UpIcon
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.more.settings.filterVisible
-import kotlinx.serialization.Serializable
 import mihon.core.navigation.util.LocalBackStack
 import mihon.core.navigation.util.popUntil
 import mihon.core.navigation.util.replace
@@ -171,48 +170,91 @@ private fun SearchResult(
 
     val index = getIndex()
     val result by produceState<List<SearchResultItem>?>(initialValue = null, searchKey) {
-        value = index.asSequence()
-            .flatMap { settingsData ->
-                settingsData.contents.asSequence()
-                    // KMK --> contents are pre-filtered by filterVisible() in getIndex():
-                    // only rows that actually exist on screen are searchable.
-                    .filter { it.title.isNotBlank() }
-                    // Flatten items contained inside PreferenceGroup
-                    .flatMap { p ->
-                        when (p) {
-                            is Preference.PreferenceGroup -> {
-                                p.preferenceItems.asSequence()
-                                    .filter { it.title.isNotBlank() }
-                                    .map { p.title to it }
+        val query = searchKey.trim()
+        val tokens = query.lowercase().split(WHITESPACE).filter { it.isNotBlank() }
+        if (tokens.isEmpty()) {
+            value = emptyList()
+            return@produceState
+        }
+
+        fun matches(text: String): Boolean = tokens.all { text.contains(it, ignoreCase = true) }
+
+        val hits = mutableListOf<ScoredResultItem>()
+
+        index.forEach { settingsData ->
+            // The screen itself is a result too. Searching "webhook" should offer the screen even
+            // when none of its rows carries the word, and searching a category name should not
+            // require guessing which row inside it mentions the thing.
+            if (matches(settingsData.title)) {
+                hits += ScoredResultItem(
+                    item = SearchResultItem(
+                        route = settingsData.route,
+                        title = settingsData.title,
+                        breadcrumbs = "",
+                        highlightKey = null,
+                    ),
+                    score = if (settingsData.title.equals(query, ignoreCase = true)) 0 else 2,
+                )
+            }
+
+            settingsData.contents.asSequence()
+                .flatMap { preference ->
+                    when (preference) {
+                        is Preference.PreferenceGroup -> preference.preferenceItems.asSequence()
+                            .map { item ->
+                                Pair<String?, Preference.PreferenceItem<*, *>>(preference.title, item)
                             }
-                            // KMK <--
-                            is Preference.PreferenceItem<*, *> -> sequenceOf(null to p)
+                        is Preference.PreferenceItem<*, *> ->
+                            sequenceOf(Pair<String?, Preference.PreferenceItem<*, *>>(null, preference))
+                    }
+                }
+                // Info rows have no action to land on.
+                .filterNot { it.second is Preference.PreferenceItem.InfoPreference }
+                .forEach { (categoryTitle, preference) ->
+                    val title = preference.title
+                    if (title.isBlank()) return@forEach
+                    val subtitle = preference.subtitle?.toString().orEmpty()
+                    val haystack = buildString {
+                        append(title)
+                        append(' ')
+                        append(subtitle)
+                        append(' ')
+                        append(settingsData.title)
+                        if (categoryTitle != null) {
+                            append(' ')
+                            append(categoryTitle)
                         }
                     }
-                    // Don't show info preference
-                    .filterNot { it.second is Preference.PreferenceItem.InfoPreference }
-                    // Filter by search query
-                    .filter { (_, p) ->
-                        val inTitle = p.title.contains(searchKey, true)
-                        val inSummary = p.subtitle?.contains(searchKey, true) ?: false
-                        inTitle || inSummary
+                    if (!matches(haystack)) return@forEach
+
+                    val score = when {
+                        title.equals(query, ignoreCase = true) -> 0
+                        title.startsWith(query, ignoreCase = true) -> 1
+                        matches(title) -> 2
+                        categoryTitle != null && matches(categoryTitle) -> 3
+                        else -> 4
                     }
-                    // Map result data
-                    .map { (categoryTitle, p) ->
-                        SearchResultItem(
+                    hits += ScoredResultItem(
+                        item = SearchResultItem(
                             route = settingsData.route,
-                            title = p.title,
+                            title = title,
                             breadcrumbs = getLocalizedBreadcrumb(
                                 path = settingsData.title,
                                 node = categoryTitle,
                                 isLtr = isLtr,
                             ),
-                            highlightKey = p.title,
-                        )
-                    }
-            }
-            .take(10) // Just take top 10 result for quicker result
-            .toList()
+                            highlightKey = title,
+                        ),
+                        score = score,
+                    )
+                }
+        }
+
+        value = hits
+            .sortedWith(compareBy({ it.score }, { it.item.title.length }))
+            .distinctBy { it.item.route to it.item.title }
+            .take(SEARCH_RESULT_LIMIT)
+            .map { it.item }
     }
 
     Crossfade(targetState = result) {
@@ -230,7 +272,7 @@ private fun SearchResult(
                 ) {
                     items(
                         items = it,
-                        key = { i -> "settings-search-${i.hashCode()}" },
+                        key = { i -> "settings-search-${i.route.hashCode()}-${i.title.hashCode()}" },
                     ) { item ->
                         Column(
                             modifier = Modifier
@@ -245,13 +287,15 @@ private fun SearchResult(
                                 fontWeight = FontWeight.Normal,
                                 style = MaterialTheme.typography.titleMedium,
                             )
-                            Text(
-                                text = item.breadcrumbs,
-                                modifier = Modifier.paddingFromBaseline(top = 16.dp),
-                                maxLines = 1,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
+                            if (item.breadcrumbs.isNotBlank()) {
+                                Text(
+                                    text = item.breadcrumbs,
+                                    modifier = Modifier.paddingFromBaseline(top = 16.dp),
+                                    maxLines = 1,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
                         }
                     }
                 }
@@ -303,5 +347,18 @@ private data class SearchResultItem(
     val route: NavKey,
     val title: String,
     val breadcrumbs: String,
-    val highlightKey: String,
+    val highlightKey: String?,
 )
+
+private data class ScoredResultItem(
+    val item: SearchResultItem,
+    val score: Int,
+)
+
+private val WHITESPACE = Regex("\\s+")
+
+/**
+ * A result cap, not a "top 10": a settings search that hides a matching row behind an arbitrary
+ * cut-off reads as broken. The list itself is cheap once the index exists.
+ */
+private const val SEARCH_RESULT_LIMIT = 50

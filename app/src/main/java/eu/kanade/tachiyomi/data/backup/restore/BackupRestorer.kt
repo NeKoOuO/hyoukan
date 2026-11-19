@@ -111,6 +111,10 @@ class BackupRestorer(
 
         val time = System.currentTimeMillis() - startTime
 
+        // A restore rewrites the app-identity preferences; apply the restored launcher icon now
+        // rather than waiting for the next process start.
+        runCatching { mihon.app.di.globalAppGraph.appIconManager.sync() }
+
         val logFile = writeErrorLog()
 
         notifier.showRestoreComplete(

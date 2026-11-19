@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -23,6 +24,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.dp
+import eu.kanade.presentation.more.settings.widget.PrefsHorizontalPadding
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.launch
 import mihon.app.di.globalAppGraph
@@ -66,7 +69,12 @@ fun LocalBookImportRow(
     }
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            // This content is hosted by a CustomPreference, whose contract is that the content
+            // supplies its own padding. Without it the summary and the button sat flush against
+            // the screen edge while every neighbouring settings row was inset.
+            .padding(horizontal = PrefsHorizontalPadding, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
     ) {
         Text(

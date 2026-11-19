@@ -278,6 +278,11 @@ sealed class Preference {
             // Rendered inside a LazyColumn item, which is a single measurement slot, not a Column:
             // content that emits more than one root composable must wrap them in a container
             // (see SettingsBookReadingScreen), or every root draws on top of the first.
+            //
+            // The content is also responsible for its own horizontal inset (16dp, the same as
+            // `PrefsHorizontalPadding`). That is why a bare Text/Button here used to sit flush
+            // against the screen edge while neighbouring rows were inset; wrap the content in a
+            // Column with that padding instead of assuming the host applies one.
             val content: @Composable () -> Unit,
         ) : PreferenceItem<Unit, Unit>() {
             override val enabled: Boolean = true

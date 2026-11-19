@@ -36,10 +36,14 @@ object SettingsCatalog {
         SettingsYakuyomiModelsRoute,
         SettingsYakuyomiBehaviorRoute,
         SettingsYakuyomiPromptRoute,
+        SettingsYakuyomiEngineAdvancedRoute,
     )
 
     val searchableScreens: List<SearchableRoute> = listOfNotNull(
         SettingsAppearanceRoute,
+        // KMK -->
+        SettingsAppIdentityRoute,
+        // KMK <--
         SettingsLibraryRoute,
         SettingsReaderRoute,
         // KMK -->
@@ -51,6 +55,8 @@ object SettingsCatalog {
         SettingsTrackingRoute,
         // AM (CONNECTIONS) -->
         SettingsConnectionRoute,
+        SettingsDiscordRoute,
+        SettingsWebhookRoute,
         // <-- AM (CONNECTIONS)
         SettingsBrowseRoute,
         SettingsDataRoute,
@@ -64,7 +70,9 @@ object SettingsCatalog {
         SettingsYakuyomiModelsRoute,
         SettingsYakuyomiBehaviorRoute,
         SettingsYakuyomiPromptRoute,
+        SettingsYakuyomiEngineAdvancedRoute,
         SettingsUpscalerRoute,
+        SettingsAchievementsRoute,
         // KMK <--
         SettingsAdvancedRoute,
     ).filterNot { BuildConfig.IS_NOMTL && it in aiScreens }

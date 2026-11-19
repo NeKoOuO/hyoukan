@@ -237,6 +237,13 @@ data object SettingsAppearanceRoute : NavKey, SearchableRoute {
         return Preference.PreferenceGroup(
             title = stringResource(MR.strings.pref_category_display),
             preferenceItems = persistentListOf(
+                // KMK -->
+                Preference.PreferenceItem.TextPreference(
+                    title = stringResource(KMR.strings.pref_app_identity),
+                    subtitle = stringResource(KMR.strings.pref_app_identity_summary),
+                    onClick = { backStack.add(SettingsAppIdentityRoute) },
+                ),
+                // KMK <--
                 Preference.PreferenceItem.TextPreference(
                     title = stringResource(MR.strings.pref_app_language) +
                         if (currentLanguage.isNotEmpty() && !currentLanguage.startsWith("en")) " (App Language)" else "",

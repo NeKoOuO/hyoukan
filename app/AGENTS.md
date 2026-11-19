@@ -12,6 +12,26 @@ The monolithic application module containing UI, domain, data services, and DI w
 | `exh.*` | TachiyomiSY/ExHentai | E-Hentai, MangaDex, recommendations |
 | `mihon.*` | Mihon upstream | Migration, upcoming, Shizuku |
 
+## App identity: launcher icons and custom names (KMK)
+
+`AppIconManager` (`data/personalization/`) owns the **exactly-one-enabled launcher alias**
+invariant and runs `sync()` from `App.onCreate`. Android cannot change an installed app's icon or
+label at runtime: the launcher reads both from the component it starts. Built-in icons are
+therefore `<activity-alias>` entries in `AndroidManifest.xml`, all targeting `MainActivity`;
+`MainActivity` itself carries no `MAIN`/`LAUNCHER` filter.
+
+Adding a built-in icon means three edits, no behaviour code:
+
+1. an `<activity-alias>` named `.ui.main.MainActivity<Name>` with its own `android:icon` and
+   `android:roundIcon`, `android:enabled="false"`;
+2. a mipmap resource for it (an `adaptive-icon` reusing `@drawable/ic_launcher_foreground`);
+3. one `BuiltInIcon` entry in `AppIconManager.builtInIcons`, carrying its KMR label.
+
+Arbitrary user images cannot replace the installed launcher icon — resources are immutable. The
+custom path therefore pins a `ShortcutInfoCompat` launcher shortcut carrying the image and the
+custom name (`pinCustomShortcut`), and the UI says so. `customAppName` is also shown in
+`LogoHeader`.
+
 ## Baked-in Komga source (KMK)
 
 `app/src/main/java/eu/kanade/tachiyomi/source/online/all/komga/` — a self-hosted Komga server
