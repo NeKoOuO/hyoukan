@@ -140,13 +140,13 @@ private object WebGpuProvider : ViewerProvider {
     override val declinesTextChapters: Boolean get() = true
 
     override fun create(mode: ReadingMode, activity: ReaderActivity, seedColor: Int?): Viewer? {
-        // KMK --> Gate the WebGPU renderer behind a total-RAM check: on low-memory devices the
-        // native renderer crashes with an uncatchable SIGSEGV (null GPUTexture in createView)
-        // when it cannot allocate GPU-visible memory. Fall back to the legacy pager viewers.
+        // KMK --> The renderer is offered wherever WebGPU itself is available; a device is no
+        // longer refused for its RAM. A device without the headroom fails at runtime, and
+        // WebGpuHealth turns repeat dead sessions into the legacy viewer instead of the same
+        // black screen every launch. The user's high-quality toggle is the only gate here.
         // KMK <--
         val basePreferences = globalAppGraph.basePreferences
-        val wantsHighQuality = basePreferences.highQualityRenderer().get() &&
-            exh.yakuyomi.DeviceMemory.isWebGpuSupported(activity)
+        val wantsHighQuality = basePreferences.highQualityRenderer().get()
         if (!wantsHighQuality) return null
         // KMK --> Sessions whose GPU device keeps dying without recovery record strikes
         // (WebGpuHealth); once they stack up, stop offering the renderer. The legacy viewer

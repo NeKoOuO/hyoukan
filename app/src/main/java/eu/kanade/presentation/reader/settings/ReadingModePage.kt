@@ -12,7 +12,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import eu.kanade.domain.manga.model.readerOrientation
 import eu.kanade.domain.manga.model.readingMode
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
@@ -22,7 +21,6 @@ import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
 import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerConfig
 import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.WebGpuViewer
 import eu.kanade.tachiyomi.ui.reader.viewer.webtoon.WebtoonViewer
-import exh.yakuyomi.DeviceMemory
 import mihon.app.di.globalAppGraph
 import tachiyomi.core.common.preference.toggle
 import tachiyomi.i18n.MR
@@ -121,13 +119,11 @@ internal fun ReadingModePage(screenModel: ReaderSettingsViewModel) {
     }
 
     val viewer by screenModel.viewerFlow.collectAsState()
-    // KMK --> Follow the configured renderer (HQ toggle + RAM gate), not just the live
-    // viewer instance: a re-entry that lands on the legacy fallback must not hide the
-    // WebGPU settings for the rest of the session. Prefs persist and apply on recovery.
-    val context = LocalContext.current
+    // KMK --> Follow the configured renderer (the HQ toggle), not just the live viewer instance:
+    // a re-entry that lands on the legacy fallback must not hide the WebGPU settings for the rest
+    // of the session. Prefs persist and apply on recovery.
     val hqRendererOn by globalAppGraph.basePreferences.highQualityRenderer().collectAsState()
-    val webGpuSupported = remember(context) { DeviceMemory.isWebGpuSupported(context) }
-    val webGpuConfigured = hqRendererOn && webGpuSupported
+    val webGpuConfigured = hqRendererOn
     // KMK <--
     if (viewer is WebtoonViewer && !webGpuConfigured) {
         WebtoonViewerSettings(

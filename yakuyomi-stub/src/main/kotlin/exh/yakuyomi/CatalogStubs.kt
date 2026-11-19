@@ -69,8 +69,7 @@ data class LocalLlmAcceleratorInfo(
 
 /**
  * Stub of [DeviceMemory] for the no-MTL APK variant. RAM is a device property, not a variant
- * property: the WebGPU (high-quality) renderer is available in both variants, so the checks
- * behave exactly like the engine module's.
+ * property: the MTL gate behaves exactly like the engine module's.
  */
 object DeviceMemory {
     // KMK --> Kept so the shared tier is expressed in the same units the old gate used. The gate
@@ -81,8 +80,6 @@ object DeviceMemory {
 
     /** Minimum total RAM required to run the on-device AI translation pipeline (3 GiB). */
     const val MTL_MIN_RAM_BYTES: Long = 3L * 1024 * 1024 * 1024
-    /** Minimum total RAM required to run the WebGPU (high-quality) renderer (3 GiB). */
-    const val WEBGPU_MIN_RAM_BYTES: Long = 3L * 1024 * 1024 * 1024
 
     // KMK --> The bypass store and the tier both live in `AppMemoryMonitor` now, so the engine
     // flavor and this stub cannot drift apart on what "low RAM" means. Each of these was this
@@ -106,10 +103,6 @@ object DeviceMemory {
     /** Whether this device has enough RAM for the on-device AI translation pipeline. */
     fun isMtlSupported(context: Context): Boolean =
         tachiyomi.core.common.util.system.AppMemoryMonitor.isMtlSupported(context)
-
-    /** Whether this device has enough RAM for the WebGPU (high-quality) renderer. */
-    fun isWebGpuSupported(context: Context): Boolean =
-        tachiyomi.core.common.util.system.AppMemoryMonitor.isWebGpuSupported(context)
 
     /** Whether the device runs a 64-bit ABI. */
     fun is64Bit(): Boolean = android.os.Build.SUPPORTED_ABIS.any { it.contains("64") }

@@ -114,7 +114,7 @@ is re-read.
 | Coil (`App.newImageLoader`) | `imageCacheBytes`, `fetchParallelism` (the startup prime) |
 | Coil decoders (JXL/AVIF/HEIF) | `sampleIfStale` → `shouldDowngradeToRgb565` |
 | `ImageUtil.lowRamJxlMaxDimension` | `sampleIfStale` → `jxlMaxDimension` |
-| MTL / WebGPU RAM gates | `isMtlSupported` / `isWebGpuSupported` (tier ≥ MEDIUM) |
+| MTL RAM gate | `isMtlSupported` (tier ≥ MEDIUM) |
 | `DeviceUtil.isLowRamDevice` | the tier, for legacy callers |
 
 **Do not reintroduce a device-size boolean.** `totalMem < 3GB` was the old answer everywhere, and it

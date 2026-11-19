@@ -194,7 +194,7 @@ for MAIN in "$HARNESS_DIR"/*Harness.kt; do
             ) ;;
         DeviceMemoryHarness)
             # The app-wide half: the tier fold and the ceilings that now govern Coil's image cache,
-            # the JXL dimension cap, the RGB_565 decision, the fetch pool and the RAM gates. Both
+            # the JXL dimension cap, the RGB_565 decision, the fetch pool and the MTL RAM gate. Both
             # files are pure (no Android import), which is exactly why they can be compiled here.
             SOURCES+=(
                 "$REPO_ROOT/core/common/src/main/kotlin/tachiyomi/core/common/util/system/DeviceMemoryClass.kt"

@@ -3,7 +3,7 @@
 //
 // This is the app-wide half of what `MemoryBudgetHarness` asserts for the reader. It exists because
 // the same policy now governs things well outside the reader - Coil's image cache, the JXL dimension
-// cap, the RGB_565 decision, the fetch pool, the MTL/WebGPU RAM gates - and each of those is a
+// cap, the RGB_565 decision, the fetch pool, the MTL RAM gate - and each of those is a
 // decision a user can see. A wrong fold here is not a crash: it is a 12GB phone that runs like a 2GB
 // one, or a 2GB phone that OOMs on a page the tier should have refused.
 //

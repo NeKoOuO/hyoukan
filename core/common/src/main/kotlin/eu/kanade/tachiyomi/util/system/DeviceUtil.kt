@@ -87,7 +87,7 @@ object DeviceUtil {
 
     // KMK --> Both of these used to be this file's own answer, computed from a 3GB threshold. They
     // now delegate to `AppMemoryMonitor`, which is the one place the device's memory class and the
-    // RAM-gate bypass are defined - so the reader, Coil, the MTL/WebGPU gates and these two helpers
+    // RAM-gate bypass are defined - so the reader, Coil, the MTL gate and these two helpers
     // cannot disagree about what the device is.
     fun isRamGateDisabled(context: Context): Boolean =
         tachiyomi.core.common.util.system.AppMemoryMonitor.isRamGateDisabled(context)

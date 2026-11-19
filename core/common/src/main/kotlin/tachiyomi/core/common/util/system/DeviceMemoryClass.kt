@@ -9,7 +9,7 @@ package tachiyomi.core.common.util.system
 //
 // Why this is not still inside the reader: the WebGPU viewer was the first subsystem to need a
 // *live* answer instead of `totalMem < 3GB`, and it built the right one. But Coil's image cache,
-// the JXL dimension cap, the RGB_565 decision, the MTL/WebGPU RAM gates and the decode-worker count
+// the JXL dimension cap, the RGB_565 decision, the MTL RAM gate and the decode-worker count
 // all asked the same question and each answered it with its own copy of the same static boolean. A
 // device therefore behaved differently depending on which screen it was on. One class, one set of
 // thresholds, one live reading - and every consumer reads the snapshot rather than asking again.

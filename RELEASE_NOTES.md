@@ -37,6 +37,7 @@ files moved. See .github/scripts/release_notes.py.
 
 ### Improve
 
+- **Reader: the high-quality WebGPU renderer is no longer withheld from low-memory devices.** It used to fall back to the standard viewer on any device below a fixed RAM class, even where WebGPU itself worked. It is now offered wherever the device supports WebGPU, and the reader's existing memory budgeting sizes pages and tiles to the device; a device whose GPU device keeps dying still falls back automatically after repeated dead sessions.
 - **Settings search now finds the setting you mean.** The settings hub opens with a search row, and the search itself indexes every settings screen instead of only the hub's main categories — Discord, webhooks, achievements, the MTL engine sub-screens and the launcher identity screen are all reachable — matches screen titles, group headings, row titles and summaries, searches all words in any order ("black theme" finds the AMOLED switch), and no longer stops at ten results.
 - **The upscaler page reads like a settings page.** Its controls are grouped by the decision they belong to (quality, performance, cache, models, library categories), all labels are translated, the live status lines are compact secondary text, and per-category defaults are proper "Inherit / Always upscale / Never upscale" rows instead of a tap-to-cycle loop.
 - **Book settings’ import row is inset like the rest of the screen**, instead of the summary and button sitting flush against the edge.

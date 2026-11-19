@@ -753,6 +753,16 @@ legitimate input — it folds a large-but-low-RAM device down to `MEDIUM` and ra
 threshold. `DeviceUtil.isLowRamDevice` is still used by Coil, `App` and `ImageUtil`, none of
 which is the reader. Neither is the gate this section is about.
 
+### The provider does not refuse a device for its RAM
+
+`WebGpuProvider` used to require `AppMemoryMonitor.isWebGpuSupported` (tier ≥ MEDIUM, or the About
+easter-egg bypass), so a low-tier phone opened on the legacy pager even where WebGPU itself worked.
+That gate is gone. The renderer is offered wherever `WebGpuRenderer.isAvailable` is true and the
+user's high-quality toggle is on, because the budget above already sizes every page and tile to the
+device. A device that genuinely cannot hold GPU-visible memory is the case `WebGpuHealth` owns:
+repeated dead sessions stop the renderer being offered. The up-front RAM check refused devices that
+would have read fine and predicted a failure the runtime already handles — do not reintroduce one.
+
 ### The loader queue admits every page twice — watch for it
 
 `HttpPageLoader` is upstream of this folder but it is where pages actually load, and its queue has

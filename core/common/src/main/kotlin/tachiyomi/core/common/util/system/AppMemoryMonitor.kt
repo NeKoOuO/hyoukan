@@ -58,7 +58,7 @@ object AppMemoryMonitor {
      */
     val is64Bit: Boolean = Build.SUPPORTED_ABIS.any { it.contains("64") }
 
-    /** The RAM-gate bypass easter egg, shared with `DeviceUtil` so one switch governs everything. */
+    /** The RAM-gate bypass easter egg, shared with `DeviceUtil` so one switch governs every gate. */
     private const val BYPASS_PREFS = "ram_gate_bypass"
     private const val BYPASS_KEY = "disabled"
 
@@ -315,10 +315,6 @@ object AppMemoryMonitor {
      * disagree with it.
      */
     fun isMtlSupported(context: Context): Boolean =
-        isRamGateDisabled(context) || deviceTier(context) >= DeviceTier.MEDIUM
-
-    /** Whether a device has enough RAM for the WebGPU (high-quality) renderer. */
-    fun isWebGpuSupported(context: Context): Boolean =
         isRamGateDisabled(context) || deviceTier(context) >= DeviceTier.MEDIUM
 
     /**
