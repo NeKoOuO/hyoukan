@@ -763,10 +763,16 @@ open class WebGpuViewer(
         // KMK --> Opens the session record the crash dump and the strike log both read. Header only:
         // the counters fill in as the session runs, and nothing here can change the reader's
         // behaviour.
+        //
+        // The continuous flag comes from the pager's type, not [isContinuous]: an open property is
+        // still the base class's `false` while this initialiser runs (the subclass assigns its
+        // override after super construction), so a continuous viewer used to describe itself as
+        // `continuous=false` in every dump - the one line a report leads with.
+        val continuousHeader = pager is ca.mpreg.webgpuviewer.ImageViewContinuous
         WebGpuDiagnostics.beginSession(
             "tier=${memoryBudget.deviceTier} budget=${memoryBudget.describe()} " +
                 "preload=${config.preloadAhead}/${config.preloadBehind} workers=${decodeParallelism()} " +
-                "continuous=$isContinuous dual=${if (isContinuous) false else isDualPageMode()}",
+                "continuous=$continuousHeader dual=${if (continuousHeader) false else isDualPageMode()}",
         )
         // KMK <--
         startDecodeWorker()
@@ -1074,28 +1080,41 @@ open class WebGpuViewer(
             }.getOrDefault(0)
             val parkedThisSession = parksThisSession > 0
             WebGpuDiagnostics.recordPark(parksThisSession)
-            // KMK --> The fourth degraded shape, and the one behind "black screen inside reader":
-            // pages decoded and uploaded, the session ran for a while, and the display never drew
-            // any of them. `isOnScreen` is the library's record of what the last rendered frame
-            // put on screen, so an empty answer here is the renderer never presenting a frame -
-            // distinct from a chapter closed before a decode finished, which is why the count has
-            // to be non-zero. Without this the session closed looking healthy: the device is
-            // alive, nothing parked, no loss, and the next launch did the same thing again.
-            // Two decoded pages and five seconds keep a session that was opened and closed again
-            // (or closed while its first page was still arriving) out of the count: the shape
-            // being struck is someone reading for a while with nothing on screen.
-            val nothingEverOnScreen = WebGpuDiagnostics.decodedPages() >= 2 &&
-                WebGpuDiagnostics.sessionDurationMs() >= 5_000L &&
-                (currentPage as? ViewerReaderPage)?.imagePage?.isOnScreen != true
-            if (deadAtExit || parkedThisSession || nothingEverOnScreen ||
-                sessionDeviceLosses.get() >= WebGpuHealth.SESSION_LOSS_STRIKE_THRESHOLD
-            ) {
+            // KMK --> The verdict is one named decision ([sessionVerdict], Android-free so
+            // SessionHealthHarness asserts every branch offline), not four inline conditions.
+            //
+            // The black-screen shape - pages decoded and uploaded, the session ran for a while,
+            // and the display never drew any of them - is judged from a *session-wide* fact
+            // (`anyPageDrawn`), NOT the page `currentPage` happens to name at this instant. It
+            // used to be the latter, and a chapter transition (where `currentPage` is a
+            // ViewerTransitionPage, so the cast to ViewerReaderPage yielded null) turned every
+            // chapter finished before closing into a strike. Two chapters read to the end
+            // disabled the renderer on that device for good, with the WebGPU settings still
+            // visible: the "falls back to the legacy reader on every device" report.
+            val verdict = sessionVerdict(
+                SessionFacts(
+                    deadAtExit = deadAtExit,
+                    surfaceParks = parksThisSession,
+                    decodedPages = WebGpuDiagnostics.decodedPages(),
+                    durationMs = WebGpuDiagnostics.sessionDurationMs(),
+                    anyPageDrawn = WebGpuDiagnostics.anyPageDrawn(),
+                    deviceLosses = sessionDeviceLosses.get(),
+                ),
+            )
+            if (verdict != SessionVerdict.HEALTHY) {
                 WebGpuHealth.recordStrike(activity)
                 logcat(LogPriority.WARN) {
-                    "WebGPU session ended degraded (deadAtExit=$deadAtExit, " +
-                        "parked=$parkedThisSession, nothingDrawn=$nothingEverOnScreen, " +
-                        "losses=${sessionDeviceLosses.get()}) - strike recorded"
+                    "WebGPU session ended degraded ($verdict): deadAtExit=$deadAtExit, " +
+                        "parks=$parksThisSession, drawn=${WebGpuDiagnostics.anyPageDrawn()}, " +
+                        "decodes=${WebGpuDiagnostics.decodedPages()}, " +
+                        "losses=${sessionDeviceLosses.get()} - strike recorded"
                 }
+            } else {
+                // KMK --> The strikes are meant to be *consecutive* dead sessions: a clean close
+                // clears the dial, or one bad session months ago would count toward disabling a
+                // device that has read fine ever since.
+                WebGpuHealth.recordHealthySession(activity)
+                // KMK <--
             }
             // KMK <--
         } catch (_: Exception) {}

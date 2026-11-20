@@ -92,6 +92,19 @@ internal object WebGpuDiagnostics {
     @Volatile
     private var parks: Int = 0
 
+    /**
+     * Whether the display ever put a page on screen during this session.
+     *
+     * A session fact, not a sample: the close-out used to ask the page the reader happened to be
+     * on at `destroy()` and count that as the session's answer. Ending on a chapter transition -
+     * which is where most people stop reading - made a perfectly healthy session report itself as
+     * the black-screen shape and record a strike, and two of those disabled the renderer for good.
+     * Set by the render walk (the page at index 0 is what the surface just drew) and read once at
+     * close; the walk's short-circuit keeps it a volatile read per frame.
+     */
+    @Volatile
+    private var pageDrawn: Boolean = false
+
     private val ladder = LinkedHashMap<String, Int>()
 
     private val budgets = ArrayDeque<String>()
@@ -121,6 +134,7 @@ internal object WebGpuDiagnostics {
             recoveries = 0
             failedRecoveries = 0
             parks = 0
+            pageDrawn = false
             ladder.clear()
             budgets.clear()
             lastBudget = "none"
@@ -139,6 +153,20 @@ internal object WebGpuDiagnostics {
     /** How long the session has been open, 0 before [beginSession]. */
     fun sessionDurationMs(): Long =
         if (startedAtMs == 0L) 0L else (System.currentTimeMillis() - startedAtMs).coerceAtLeast(0L)
+
+    /**
+     * Whether any page has been on screen at least once this session.
+     *
+     * The close-out's black-screen test: pages decoded and the display never presented one. It is
+     * deliberately a session-level fact so the page being read at exit cannot decide it - see the
+     * comment on [pageDrawn].
+     */
+    fun anyPageDrawn(): Boolean = pageDrawn
+
+    /** Records that the last frame put a page on screen. Idempotent; called from the render walk. */
+    fun recordPageDrawn() {
+        pageDrawn = true
+    }
 
     /** One finished decode: how it ended, how long it took, and whether it had to be downsampled. */
     fun recordDecode(outcome: String, totalMs: Long, label: String, downsampled: Boolean) {
@@ -224,6 +252,7 @@ internal object WebGpuDiagnostics {
                 recoveries = recoveries,
                 failedRecoveries = failedRecoveries,
                 parks = parks,
+                pageDrawn = pageDrawn,
                 ladder = ladder.toMap(),
                 budgets = budgets.toList(),
                 lastBudget = lastBudget,
@@ -241,7 +270,8 @@ internal object WebGpuDiagnostics {
             }
             appendLine(
                 "  downsampled=${snapshot.downsampled} stalls=${snapshot.stalls} " +
-                    "evictions=${snapshot.evictions} worstChurn=${snapshot.worstChurn}",
+                    "evictions=${snapshot.evictions} worstChurn=${snapshot.worstChurn} " +
+                    "drawn=${snapshot.pageDrawn}",
             )
             appendLine(
                 "  deviceLosses=${snapshot.deviceLosses} recoveries=${snapshot.recoveries} " +
@@ -310,6 +340,7 @@ internal object WebGpuDiagnostics {
         val recoveries: Int,
         val failedRecoveries: Int,
         val parks: Int,
+        val pageDrawn: Boolean,
         val ladder: Map<String, Int>,
         val budgets: List<String>,
         val lastBudget: String,

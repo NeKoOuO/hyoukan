@@ -46,6 +46,7 @@ import androidx.core.graphics.drawable.toDrawable
 import androidx.core.view.updatePadding
 import ca.mpreg.webgpuviewer.renderer.Image
 import ca.mpreg.webgpuviewer.renderer.Image.Companion.invoke
+import ca.mpreg.webgpuviewer.renderer.WebGpuRenderer
 import ca.mpreg.webgpuviewer.viewer.ImagePage
 import ca.mpreg.webgpuviewer.viewer.ImageViewer
 import ca.mpreg.webgpuviewer.viewer.ImageViewerState
@@ -93,7 +94,17 @@ fun MangaCoverDialog(
     // KMK <--
     // Mihon -->
     val view = LocalView.current
-    val useNewRenderer by view.context.appGraph.basePreferences.highQualityRenderer().collectAsState()
+    val wantsNewRenderer by view.context.appGraph.basePreferences.highQualityRenderer().collectAsState()
+    // KMK --> The switch now defaults on, so the GPU path needs the renderer's own availability
+    // check too: an explicit opt-in on an unsupported device was the user's risk, a default is not.
+    // Probed after the first composition (reading it initialises the device), so the first frame
+    // draws the ordinary cover and swaps once the answer is known rather than blocking on it.
+    var webGpuAvailable by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        webGpuAvailable = runCatching { WebGpuRenderer.isAvailable }.getOrDefault(false)
+    }
+    val useNewRenderer = wantsNewRenderer && webGpuAvailable
+    // KMK <--
     // Mihon <--
     Dialog(
         onDismissRequest = onDismissRequest,

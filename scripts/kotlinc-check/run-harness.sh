@@ -209,6 +209,18 @@ for MAIN in "$HARNESS_DIR"/*Harness.kt; do
             SOURCES+=("$WEBGPU_DIR/ChapterPreloadGuard.kt") ;;
         ColumnWidthHarness)
             SOURCES+=("$WEBGPU_DIR/WebGpuColumnWidth.kt") ;;
+        SessionHealthHarness)
+            # The session verdict that decides whether a closed reader session records a strike.
+            # Pure (no Android import) - it needs the policy for the loss threshold.
+            SOURCES+=("$WEBGPU_DIR/WebGpuSessionHealth.kt" "$WEBGPU_DIR/WebGpuHealthPolicy.kt") ;;
+        WebGpuHealthHarness)
+            # The strike record's transitions (build scope, consecutive clearing, the cap) plus
+            # the reported scenario driven end to end through the real session verdict.
+            SOURCES+=("$WEBGPU_DIR/WebGpuHealthPolicy.kt" "$WEBGPU_DIR/WebGpuSessionHealth.kt") ;;
+        WebGpuOfferHarness)
+            # The provider's gate order, including that the renderer is not probed after an
+            # earlier gate has already declined.
+            SOURCES+=("$WEBGPU_DIR/WebGpuOffer.kt" "$WEBGPU_DIR/WebGpuHealthPolicy.kt") ;;
         DiagnosticsHarness)
             # The recorder's own facades are stubbed, so the run writes nothing.
             SOURCES+=("$WEBGPU_DIR/WebGpuDiagnostics.kt")

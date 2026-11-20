@@ -7,6 +7,7 @@ open class Context {
     companion object {
         const val ACTIVITY_SERVICE: String = "activity"
         const val WINDOW_SERVICE: String = "window"
+        const val MODE_PRIVATE: Int = 0
     }
 
     fun getSystemService(name: String): Any? = null
@@ -19,6 +20,33 @@ open class Context {
 
     val packageManager: PackageManager
         get() = PackageManager()
+
+    /** Enough of the preference API for `WebGpuHealth`'s strike bookkeeping. */
+    fun getSharedPreferences(name: String, mode: Int): SharedPreferences = SharedPreferences()
+}
+
+/** Offline stub for check.sh. */
+class SharedPreferences {
+    fun getInt(key: String, defValue: Int): Int = defValue
+
+    fun getString(key: String, defValue: String?): String? = defValue
+
+    fun getBoolean(key: String, defValue: Boolean): Boolean = defValue
+
+    fun edit(): Editor = Editor()
+
+    /** Offline stub for check.sh. */
+    class Editor {
+        fun putInt(key: String, value: Int): Editor = this
+
+        fun putString(key: String, value: String?): Editor = this
+
+        fun putBoolean(key: String, value: Boolean): Editor = this
+
+        fun remove(key: String): Editor = this
+
+        fun apply() { }
+    }
 }
 
 /** Offline stub for check.sh. */

@@ -256,6 +256,16 @@ private fun WebGpuViewer.evictReplacedPages(): ViewerReaderPage? {
 internal fun WebGpuViewer.resolveFetchedPage(index: Int): ImagePage? {
     val current = currentPage ?: return null
 
+    // KMK --> Session-wide proof that the display works. `isOnScreen` reads the previous frame's
+    // drawn set (the library publishes it in captureRenderState, which asks for index 0), so the
+    // second frame of a session is the earliest this can answer true - and every frame after it
+    // is a fresh chance. The close-out's black-screen strike asks this, never the page the reader
+    // happens to be on when the session ends: a chapter transition at exit is not a dead display.
+    if (index == 0 && !WebGpuDiagnostics.anyPageDrawn() && current.imagePage.isOnScreen) {
+        WebGpuDiagnostics.recordPageDrawn()
+    }
+    // KMK <--
+
     if (isContinuous) {
         val page = continuousPage(index) ?: return null
         ensureDecoding(page)

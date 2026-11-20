@@ -573,6 +573,7 @@
     <string name="pref_upscale_category_defaults_summary">Per-manga toggles override these; entries without a stored toggle inherit their category choice</string>
     <string name="pref_upscale_info_per_manga">Upscaling is per-manga: toggle Upscale Manga on a manga details page, or set category defaults above. The mode, model, and backend identity are part of the page cache key.</string>
     <string name="pref_upscale_info_disabled">Enable upscaling to reveal the per-manga toggle on manga details.</string>
+    <string name="pref_high_quality_renderer_unavailable">Temporarily unavailable on this device: the renderer failed twice in a row. Switch it off and on again to retry.</string>
     <string name="pref_webgpu_page_offset">WebGPU page offset</string>
     <string name="pref_webgpu_page_offset_summary">Horizontal offset for paged pages (-50% left, 50% right). Mirrors legacy pager offset.</string>
     <string name="pref_webgpu_dark_mode">Dark mode filter</string>

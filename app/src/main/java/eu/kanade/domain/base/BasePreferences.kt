@@ -42,6 +42,12 @@ class BasePreferences(
     fun alwaysDecodeLongStripWithSSIV() = preferenceStore.getBoolean("pref_always_decode_long_strip_with_ssiv", false)
 
     // Mihon -->
-    fun highQualityRenderer() = preferenceStore.getBoolean("pref_high_quality_renderer_key", false)
+    // KMK --> On by default. The reader is offered the renderer wherever WebGPU is available, and
+    // a device whose GPU device keeps failing falls back through WebGpuHealth - so the switch
+    // states a preference, and the health latch is the device's own verdict on it. A default of
+    // off meant the renderer was invisible to everyone who never found this row, which is not a
+    // choice a "high quality" build should be making for them.
+    fun highQualityRenderer() = preferenceStore.getBoolean("pref_high_quality_renderer_key", true)
+    // KMK <--
     // Mihon <--
 }

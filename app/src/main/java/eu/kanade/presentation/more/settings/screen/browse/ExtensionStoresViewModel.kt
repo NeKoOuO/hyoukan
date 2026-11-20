@@ -21,6 +21,7 @@ import mihon.domain.extension.interactor.RemoveExtensionStore
 import mihon.domain.extension.interactor.UpdateExtensionStores
 import mihon.domain.extension.model.ExtensionStore
 import tachiyomi.core.common.util.lang.launchIO
+import tachiyomi.core.common.util.lang.launchNonCancellable
 
 @Inject
 @ViewModelKey
@@ -47,6 +48,21 @@ class ExtensionStoresViewModel(
         }
     }
 
+    /**
+     * A store URL arriving through the "add repo" deep link can reach this ViewModel
+     * while [state] is still [ExtensionStoreScreenState.Loading]; the screen fires its
+     * `LaunchedEffect(url)` on the first composition. [updateSuccessState] used to drop
+     * the dialog in that state, so the link did nothing until the app was restarted and
+     * the screen reopened. Hold the URL until the store list has loaded, then apply it.
+     */
+    private val pendingDeeplink = PendingExtensionStoreDeeplink()
+
+    private fun applyPendingDeeplink() {
+        val success = mutableState.value as? ExtensionStoreScreenState.Success ?: return
+        val dialog = pendingDeeplink.consume(success.stores) ?: return
+        updateSuccessState { it.copy(dialog = dialog) }
+    }
+
     init {
         viewModelScope.launchIO {
             getExtensionStores.subscribe()
@@ -62,6 +78,7 @@ class ExtensionStoresViewModel(
                             is ExtensionStoreScreenState.Success -> it.copy(stores = stores)
                         }
                     }
+                    applyPendingDeeplink()
                 }
         }
 
@@ -86,7 +103,10 @@ class ExtensionStoresViewModel(
      */
     fun createRepo(indexUrl: String) {
         // KMK -->
-        viewModelScope.launchIO {
+        // Keep the write alive if the user leaves the screen (or force-stops the
+        // app) right after confirming: a cancelled insert would leave the store
+        // absent after the next launch with no error ever shown.
+        viewModelScope.launchNonCancellable {
             // KMK <--
             updateSuccessState {
                 it.copy(
@@ -176,14 +196,8 @@ class ExtensionStoresViewModel(
     // KMK <--
 
     fun addFromDeeplink(storeIndexUrl: String) {
-        updateSuccessState { state ->
-            state.copy(
-                dialog = ExtensionStoreDialog.Confirm(
-                    url = storeIndexUrl,
-                    alreadyExists = state.stores.any { it.indexUrl == storeIndexUrl },
-                ),
-            )
-        }
+        pendingDeeplink.queue(storeIndexUrl)
+        applyPendingDeeplink()
     }
 
     fun showDialog(dialog: ExtensionStoreDialog) {

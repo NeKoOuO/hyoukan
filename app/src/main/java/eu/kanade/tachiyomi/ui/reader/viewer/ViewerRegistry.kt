@@ -8,9 +8,12 @@ import eu.kanade.tachiyomi.ui.reader.viewer.pager.L2RPagerViewer
 import eu.kanade.tachiyomi.ui.reader.viewer.pager.R2LPagerViewer
 import eu.kanade.tachiyomi.ui.reader.viewer.pager.VerticalPagerViewer
 import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.WebGpuHealth
+import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.WebGpuOffer
 import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.WebGpuViewer
 import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.WebGpuViewerContinuous
+import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.webGpuOfferFor
 import eu.kanade.tachiyomi.ui.reader.viewer.webtoon.WebtoonViewer
+import exh.log.xLogE
 import logcat.LogPriority
 import logcat.LogPriority.DEBUG
 import mihon.app.di.globalAppGraph
@@ -135,6 +138,20 @@ object ViewerRegistry {
     }
 }
 
+/**
+ * Offers the WebGPU viewer, in this order, and stops at the first reason:
+ *
+ * 1. the user's high-quality switch is off;
+ * 2. this build has recorded [WebGpuHealth.DISABLE_STRIKES] degraded sessions on this device;
+ * 3. the renderer cannot be initialised or has lost its device;
+ * 4. constructing the viewer threw.
+ *
+ * Reasons 2-4 are logged on the `ViewerRegistry` line **and**, for a user with only a phone, to the
+ * in-app log - a reader that silently opens on the legacy pager with the WebGPU settings still
+ * visible is indistinguishable from a bug, which is exactly how it was reported. Each reason has
+ * its own sentence so a dump names it without needing the reader's source. Reason 1 is silent on
+ * purpose: it is the switch doing its job, not a failure.
+ */
 private object WebGpuProvider : ViewerProvider {
     override val order: Int = 0
     override val declinesTextChapters: Boolean get() = true
@@ -147,25 +164,46 @@ private object WebGpuProvider : ViewerProvider {
         // KMK <--
         val basePreferences = globalAppGraph.basePreferences
         val wantsHighQuality = basePreferences.highQualityRenderer().get()
-        if (!wantsHighQuality) return null
-        // KMK --> Sessions whose GPU device keeps dying without recovery record strikes
-        // (WebGpuHealth); once they stack up, stop offering the renderer. The legacy viewer
-        // is the working fallback - this is what turns the reported black-screen loops into
-        // a reader that opens, instead of the same dead device every launch.
-        if (WebGpuHealth.isDisabled(activity)) {
-            logcat(LogPriority.INFO) {
-                "WebGPU viewer declined: device recorded ${WebGpuHealth.DISABLE_STRIKES}+ " +
-                    "dead-device sessions - falling back to the legacy viewer"
+        // KMK --> The gate itself is [webGpuOfferFor], a pure function: the order (switch, health,
+        // renderer probe) is load-bearing and asserted offline. The probe is a lambda because it
+        // initialises the GPU device, so it must not run for a reader that was never going to use
+        // it. Sessions whose GPU device keeps dying without recovery record strikes
+        // (WebGpuHealth); once they stack up, stop offering the renderer, so the reader opens
+        // instead of repeating the same black screen every launch. The count is scoped to the
+        // build that recorded it, so a fixed build is not held to an older one's verdict.
+        val strikes = if (wantsHighQuality) WebGpuHealth.strikeCount(activity) else 0
+        val offer = webGpuOfferFor(wantsHighQuality, strikes) {
+            try {
+                ca.mpreg.webgpuviewer.renderer.WebGpuRenderer.isAvailable
+            } catch (_: Throwable) {
+                false
             }
-            return null
+        }
+        when (offer) {
+            WebGpuOffer.SWITCH_OFF -> return null
+            WebGpuOffer.HEALTH_DISABLED -> {
+                val reason = "WebGPU viewer declined: this build recorded $strikes/" +
+                    "${WebGpuHealth.DISABLE_STRIKES} degraded sessions on this device - " +
+                    "using the legacy viewer (About easter egg or toggling the renderer off/on resets it)"
+                logcat(LogPriority.INFO) { reason }
+                xLogE(reason)
+                return null
+            }
+
+            WebGpuOffer.RENDERER_UNAVAILABLE -> {
+                // `isAvailable` is false for a latched init failure or a lost device;
+                // `unavailableReason` says which, and it is the only place that sentence exists.
+                val reason = "WebGPU viewer declined: renderer unavailable - " +
+                    runCatching { ca.mpreg.webgpuviewer.renderer.WebGpuRenderer.unavailableReason }
+                        .getOrNull().orEmpty().ifEmpty { "unknown reason" }
+                logcat(LogPriority.INFO) { reason }
+                xLogE(reason)
+                return null
+            }
+
+            WebGpuOffer.OFFERED -> Unit
         }
         // KMK <--
-        val isWebGpuAvailable = try {
-            ca.mpreg.webgpuviewer.renderer.WebGpuRenderer.isAvailable
-        } catch (_: Throwable) {
-            false
-        }
-        if (!isWebGpuAvailable) return null
         return try {
             when (mode) {
                 ReadingMode.LEFT_TO_RIGHT -> WebGpuViewer(activity, isReversed = false, isVertical = false)
@@ -177,6 +215,7 @@ private object WebGpuProvider : ViewerProvider {
             }
         } catch (e: Throwable) {
             android.util.Log.w("ReadingMode", "WebGPU viewer failed, falling back to pager", e)
+            xLogE("WebGPU viewer failed to build, falling back to the legacy pager", e)
             null
         }
     }

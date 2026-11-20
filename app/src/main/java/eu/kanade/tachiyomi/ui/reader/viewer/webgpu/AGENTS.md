@@ -306,11 +306,61 @@ webgpureport exports; a PowerVR/nomtl emulator logcat with
   that lost the device `SESSION_LOSS_STRIKE_THRESHOLD` (3) times even with recoveries in
   between; `DISABLE_STRIKES` (2) strikes and `WebGpuProvider` declines, so the reader opens
   on the pager instead of the same dead device every launch. The About screen easter egg
-  (the RAM-gate one) resets the strikes. A strike is *not* recorded for a session that lost
-  the device once and recovered — backgrounding does that on healthy phones. Every strike is
-  also written to the **in-app log file** (`xLogE` from `recordStrike`), because a phone-only
-  user never sees logcat and "the reader stopped opening on WebGPU" with no record of why
-  reads as a mystery regression.
+  (the RAM-gate one) resets the strikes, and so does **turning the high-quality switch on** —
+  that is the user explicitly asking for the renderer again. A strike is *not* recorded for a
+  session that lost the device once and recovered — backgrounding does that on healthy phones.
+  Every strike is also written to the **in-app log file** (`xLogE` from `recordStrike`),
+  because a phone-only user never sees logcat and "the reader stopped opening on WebGPU" with
+  no record of why reads as a mystery regression.
+
+  **The strike count is scoped to the build that recorded it** (`BuildConfig.VERSION_NAME` +
+  `BUILD_TIME`, stored beside the count). A latch that outlives the defect it was recorded for is
+  a latch the fix cannot lift: after the repair ships, every device that was ever struck keeps
+  opening on the legacy pager, the WebGPU settings stay visible, and nothing says why — reported
+  as "it falls back on every device for some reason". A different build discards the old count
+  (with an `xLogE` line saying so) and gets two fresh sessions; a device that genuinely cannot run
+  the renderer therefore retries twice per release and falls back again, which is the correct
+  trade. `BUILD_TIME` is in the key so a local rebuild of the same commit is also a fresh scope —
+  a fix tested from uncommitted sources must not inherit the binary it replaced.
+
+  **A clean close clears the count** (`recordHealthySession`). "Consecutive" is the documented
+  rule and it was not implemented: the count only climbed, so one unlucky session months ago
+  counted toward disabling a device that had read fine ever since. A device that fails every
+  session still has no clean close to clear it with, so the latch still latches.
+
+### WHY THE WEBGPU VIEWER IS NOT OFFERED — the fallback decision, in order
+
+`WebGpuProvider.create` is the only place that can hand the reader to the legacy pager, and it
+stops at the first reason. Each one is logged on the `ViewerRegistry` line **and** to the in-app
+log, because from the reader's UI every one of them looks identical: a pager with the WebGPU
+settings still shown.
+
+| # | Reason | Where the answer is |
+|---|---|---|
+| 1 | The user's high-quality switch is off | `BasePreferences.highQualityRenderer()` |
+| 2 | This build recorded `DISABLE_STRIKES` degraded sessions on this device | `WebGpuHealth.strikeCount`, in `webgpu_health` prefs |
+| 3 | The renderer cannot initialise or lost its device | `WebGpuRenderer.unavailableReason` (`initError` / device lost / never initialised) |
+| 4 | Constructing the viewer threw | `logcat` + the in-app log carry the stack |
+
+Row 1 is not a failure — it is the switch doing its job. Rows 2–4 are the ones a report is about,
+and each now has a sentence in the in-app log beginning `WebGPU viewer declined:` or `WebGPU
+viewer failed`. **Do not add a fifth silent `return null`**; a decline with no line is the reason
+this section exists.
+
+### A strike is a session verdict, never a sample of the page at exit
+
+The black-screen strike used to ask the page `currentPage` named *at `destroy()`* whether it was
+on screen. Closing the reader on a chapter transition — the most ordinary way to stop reading —
+makes `currentPage` a `ViewerTransitionPage`, which is not a `ViewerReaderPage`; the cast yielded
+null, the comparison read "nothing on screen", and a healthy session recorded a strike. Two
+chapters read to the end disabled the renderer on that device for good.
+
+`WebGpuDiagnostics.anyPageDrawn()` is the replacement: a session-wide flag, set by the render walk
+(`resolveFetchedPage(0)`) the first time the page the surface just drew reports `isOnScreen`, and
+read once at close. **Rule: a degraded-session verdict is computed from facts accumulated over the
+session, never from the state at the moment the session ends.** The same applies to any future
+condition added here — `parks`, losses and recoveries are already counters, and the one sampled
+condition was the one that misfired.
 - **The app's `androidx.webgpu` runtime must be the version the library was compiled against.**
   The submodule is an `includeBuild`, so its `embed(libs.androidx.webgpu)` configuration never
   reaches the app's runtime classpath; `app/build.gradle.kts` supplies that dependency itself.
@@ -759,9 +809,13 @@ which is the reader. Neither is the gate this section is about.
 easter-egg bypass), so a low-tier phone opened on the legacy pager even where WebGPU itself worked.
 That gate is gone. The renderer is offered wherever `WebGpuRenderer.isAvailable` is true and the
 user's high-quality toggle is on, because the budget above already sizes every page and tile to the
-device. A device that genuinely cannot hold GPU-visible memory is the case `WebGpuHealth` owns:
-repeated dead sessions stop the renderer being offered. The up-front RAM check refused devices that
-would have read fine and predicted a failure the runtime already handles — do not reintroduce one.
+device. **The toggle defaults on** (`BasePreferences.highQualityRenderer`): the renderer used to be
+invisible to everyone who never found the row, which is not a choice a high-quality build should be
+making for them, and a device that cannot run it falls back through `WebGpuHealth` anyway. A device
+that genuinely cannot hold GPU-visible memory is the case `WebGpuHealth` owns: repeated dead
+sessions stop the renderer being offered, and the switch's own subtitle says so instead of looking
+inert. The up-front RAM check refused devices that would have read fine and predicted a failure the
+runtime already handles — do not reintroduce one.
 
 ### The loader queue admits every page twice — watch for it
 
@@ -896,8 +950,9 @@ above — a type mismatch that a compiler will not catch.
 | `device lost reason=1: CreateAndroidSurfaceKHR failed with VK_ERROR_NATIVE_WINDOW_IN_USE_KHR`, preceded by `BufferQueueProducer ... connect: already connected` and `vulkan: native_window_api_connect() failed` | A **second** swapchain was created on a window the old one still owned. Dawn can defer `vkDestroySurfaceKHR` past `close()`, so recovery must drop the old `GPUSurface` *and* release the retained `ANativeWindow` (`NativeWindow.release`) **before** it builds the replacement — see `recoverFromDeviceLoss`. The `SurfaceTexture-0-…` name means the TextureView path (API < 34), where the window is a `SurfaceTexture`'s BufferQueue. **If it still appears on a current build, the surface-teardown pump failed — see the landmine below.** |
 | `recovery failed (consecutive: N, next attempt in Xms)` | A recovery produced no usable device; the library ladder is escalating. Consecutive counts reset only after a device survives 15 s. Each failed recovery used to also leak a whole Dawn device (no finalizer on the wrapper) — retired devices are destroyed one recovery cycle later now (`destroyRetired`, with `destroy()` alone; `close()` on a retired device corrupts a still-pending loss record), so a persistently climbing `consecutive:` with native memory growth is the trace to send. |
 | `recovery deferred Xs (consecutive failures: N)` | A recovery attempt arrived inside the ladder's cooldown and was refused without touching the GPU. Normal while the ladder is escalating; a fresh loss event or a stable device resets it. |
-| `recovery gave up after N consecutive failures` | The ladder stopped self-retrying. The reader stays on a dead device until a *new* device-loss event arrives (which restarts the ladder) or the viewer is recreated. Everything app-side keeps working; only WebGPU draws are parked. Since the strike system: a session that ends in this state records one `WebGpuHealth` strike, and two struck sessions make the next session open on the legacy viewer instead. |
-| `DecodeTrace ... decoded total=...` lines but **no `WebGpuRenderer`/frame lines at all**, session closes with **zero pages ever on screen** (2026-11-17 field log, Multilaser M8_4G, Android 11, `tier=TINY`, `evictions=55 worstChurn=7`) | The renderer never presented a frame: pages decode, upload and evict, the screen stays black, and the device is alive so nothing else struck. `WebGpuViewer.destroy` now records a strike when `WebGpuDiagnostics.decodedPages() > 0` but the current page's `imagePage.isOnScreen` was never true, so two such sessions open on the legacy viewer instead of repeating forever. If it still appears after the strikes, the draw path itself is the suspect — that log has no renderer line at all, which is the signature to chase, not a decode stall. |
+| `recovery gave up after N consecutive failures` | The ladder stopped self-retrying. The reader stays on a dead device until a *new* device-loss event arrives (which restarts the ladder) or the viewer is recreated. Everything app-side keeps working; only WebGPU draws are parked. Since the strike system: a session that ends in this state records one `WebGpuHealth` strike, and two struck sessions (recorded by the *same build* — see `WebGpuHealth`) make the next session open on the legacy viewer instead. |
+| `WebGPU viewer declined: …` in the in-app log, WebGPU settings still visible in the reader | `WebGpuProvider` refused and said why: the switch is off, this build has recorded 2 degraded sessions (`WebGpuHealth`), the renderer is unavailable (`unavailableReason`), or construction threw. Fix the named reason; do not guess from the reader's appearance. |
+| `DecodeTrace ... decoded total=...` lines but **no `WebGpuRenderer`/frame lines at all**, session closes with **zero pages ever on screen** (2026-11-17 field log, Multilaser M8_4G, Android 11, `tier=TINY`, `evictions=55 worstChurn=7`) | The renderer never presented a frame: pages decode, upload and evict, the screen stays black, and the device is alive so nothing else struck. `WebGpuViewer.destroy` now records a strike when `decodedPages() >= 2`, the session ran 5 s, and `WebGpuDiagnostics.anyPageDrawn()` is false — a session-wide flag, so the page the reader happens to be on at exit cannot decide it (see *A strike is a session verdict*). Two such sessions open on the legacy viewer instead of repeating forever. If it still appears after the strikes, the draw path itself is the suspect — that log has no renderer line at all, which is the signature to chase, not a decode stall. |
 | `parking until the surface changes` (see the swapchain row above) and the session then closes without ever recovering | The PowerVR black-screen shape: the device is *alive* (`isAvailable` stays true the whole time), so the dead-device strike never fired and the session used to close looking healthy. The renderer now counts parks (`surfaceParkCount`, instance-scoped on `WebGpuRenderer` — read it through `pager.state.renderer`, not the companion), and a session that ends having parked records one `WebGpuHealth` strike too, so persistent parkers fall back to the legacy viewer on later launches. |
 | A field report says the reader "logs nothing" — and the user enabled **verbose logging** (Settings → Advanced) before capturing | Verbose logging wires the **OkHttp logging interceptor only** — it captures HTTP traffic and has nothing to say about a decode/render/GPU failure. The reader's own diagnostics live in logcat (`WebGpuRenderer`/`TileRenderer`/`DecodeTrace` greps, below), and the app-side degraded-session path is mirrored into the in-app file log by `WebGpuHealth.recordStrike` (xLog) since 2026-11. Do not send a user down the verbose-logging path for a render defect. |
 | A field report from a **preview/beta build** shows no Discord RPC lines at all (the external-asset converter this referred to has since been removed — Discord's external-assets API needs the *application's* token, which the app never had) | The Discord RPC port logs through **Timber**, which was planted only in debug builds — every RPC failure (including the external-asset HTTP errors behind "presence has no images") was a silent no-op outside debug. `Timber.plant` is unconditional in `App.onCreate` now. Any future Anikku-style port should assume the same: library code that logs through a facade must have that facade planted in every build type. |
@@ -1304,6 +1359,15 @@ thing that runs.
 | `ChapterPreloadGuardHarness` | one winner per key, release and re-begin, stale requeue, blank/oversized keys, the key-set cap |
 | `ColumnWidthHarness` | the continuous reader's column width: percent-per-side padding, monotonicity, the 20% floor, degenerate screens |
 | `DiagnosticsHarness` | the session report: a clean session is not notable, every anomaly is, the bounded rings stay bounded, and `render()` never throws |
+| `SessionHealthHarness` | the strike verdict: a chapter transition at exit is healthy (the regression), the black screen needs two decodes and five seconds (inclusive), the four degraded shapes' precedence, negative counters, and HEALTHY as the only clean verdict |
+| `WebGpuHealthHarness` | the strike record's transitions: the threshold, the cap, the build scope (foreign and untagged counts discarded, re-tag on the next strike), a clean session clearing, the reset |
+| `WebGpuOfferHarness` | the provider's gate order: switch → health latch → renderer probe, that the probe is skipped once an earlier gate declines (it initialises the GPU device), and the precedence between all three |
+
+The WebGPU JUnit suites (`WebGpuHealthPolicyTest`, `WebGpuSessionHealthTest`,
+`WebGpuDiagnosticsDrawnTest`, `WebGpuOfferTest`, plus `BasePreferencesRendererDefaultTest` for the
+on-by-default switch) run under Gradle's `testReleaseUnitTest`. They cover the same policy as the
+three harnesses above plus the parts that need real objects; the harnesses exist so an agent can
+verify the policy without Gradle.
 
 Two of these found real defects on the day they were written, both of the "silent, looks like
 something else" kind:
