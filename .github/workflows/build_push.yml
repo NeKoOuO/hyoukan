@@ -22,7 +22,10 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  # A newer master push must replace the run that is still building/publishing a
+  # beta, otherwise several runs race to tag releases in houri-beta and an old
+  # commit can publish after the newest one.
+  cancel-in-progress: true
 
 permissions:
   contents: read
