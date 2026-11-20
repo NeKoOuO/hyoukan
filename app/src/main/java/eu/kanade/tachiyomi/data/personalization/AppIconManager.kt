@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.net.Uri
 import androidx.annotation.DrawableRes
 import androidx.core.content.pm.ShortcutInfoCompat
@@ -21,6 +23,8 @@ import exh.log.xLogE
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.i18n.kmk.KMR
 import java.io.File
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * The app-identity framework: built-in launcher icons and the custom shortcut fallback.
@@ -56,6 +60,20 @@ class AppIconManager(
         val defaultEnabled: Boolean = false,
     )
 
+    /** How a picked image is turned into the square custom-shortcut icon. */
+    enum class CustomIconScaleMode(val id: String) {
+        /** Fill the square by trimming the overflowing edges (the pre-existing behaviour). */
+        CROP("crop"),
+
+        /** Keep the whole image, centred on a transparent square. */
+        FIT("fit"),
+        ;
+
+        companion object {
+            fun fromId(id: String): CustomIconScaleMode = entries.firstOrNull { it.id == id } ?: CROP
+        }
+    }
+
     private val packageManager: PackageManager
         get() = context.packageManager
 
@@ -72,6 +90,15 @@ class AppIconManager(
         AppIdentitySettingKeys.customName.key,
         AppIdentitySettingKeys.customName.default,
     )
+
+    /** Stored as the enum id so the preference stays a plain backup-friendly string. */
+    val customIconScale = preferenceStore.getString(
+        AppIdentitySettingKeys.customIconScale.key,
+        AppIdentitySettingKeys.customIconScale.default,
+    )
+
+    val customIconScaleMode: CustomIconScaleMode
+        get() = CustomIconScaleMode.fromId(customIconScale.get())
 
     // The alias class names live under the app's Kotlin namespace (`eu.kanade.tachiyomi…`, here
     // `eu.kanade.tachiyomi.ui.main`), not the runtime applicationId (`app.houri` and its suffixes):
@@ -184,21 +211,26 @@ class AppIconManager(
 
     fun customIconFile(): File = File(context.filesDir, "personalization/launcher_icon.png")
 
+    /** The picked image before squaring, kept so a crop/fit change need not re-pick the image. */
+    private fun customIconSourceFile(): File =
+        File(context.filesDir, "personalization/launcher_icon_source.png")
+
     fun hasCustomIcon(): Boolean = customIconFile().isFile
 
     /**
-     * Copies the picked image into app storage at a size a launcher icon can actually use. Returns
-     * false when the stream is not a decodable image, so the UI can say the pick failed instead of
-     * silently keeping the previous one.
+     * Copies the picked image into app storage at a size a launcher icon can actually use, then
+     * derives the square icon from it using the current [CustomIconScaleMode]. Returns false when
+     * the stream is not a decodable image, so the UI can say the pick failed instead of silently
+     * keeping the previous one.
      */
     fun importCustomIcon(uri: Uri): Boolean {
         return runCatching {
-            val bitmap = decodeBounded(uri) ?: return false
-            val scaled = bitmap.scaledToSquare(MAX_CUSTOM_ICON_PX)
-            val target = customIconFile().apply { parentFile?.mkdirs() }
-            target.outputStream().use { scaled.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            if (scaled !== bitmap) bitmap.recycle()
-            scaled.recycle()
+            val decoded = decodeBounded(uri, MAX_CUSTOM_ICON_SOURCE_PX) ?: return false
+            val source = decoded.scaledToFit(MAX_CUSTOM_ICON_SOURCE_PX)
+            writePng(source, customIconSourceFile())
+            writeSquareIcon(source)
+            if (source !== decoded) decoded.recycle()
+            source.recycle()
             true
         }.getOrElse {
             xLogE("AppIconManager: custom icon import failed", it)
@@ -207,11 +239,41 @@ class AppIconManager(
     }
 
     /**
+     * Persists [mode] and rebuilds the square icon from the stored source, so switching between
+     * crop and fit is reversible without picking the image again. True when the stored icon now
+     * reflects the mode (also when no custom icon exists yet - the next import uses it).
+     */
+    fun applyCustomIconScaleMode(mode: CustomIconScaleMode): Boolean {
+        return runCatching {
+            customIconScale.set(mode.id)
+            val sourceFile = customIconSourceFile().takeIf { it.isFile } ?: return@runCatching true
+            val source = BitmapFactory.decodeFile(sourceFile.path) ?: return@runCatching true
+            writeSquareIcon(source, mode)
+            source.recycle()
+            true
+        }.getOrElse {
+            xLogE("AppIconManager: rebuilding the custom icon for ${mode.id} failed", it)
+            false
+        }
+    }
+
+    private fun writeSquareIcon(source: Bitmap, mode: CustomIconScaleMode = customIconScaleMode) {
+        val square = source.toSquareIcon(MAX_CUSTOM_ICON_PX, mode)
+        writePng(square, customIconFile())
+        if (square !== source) square.recycle()
+    }
+
+    private fun writePng(bitmap: Bitmap, target: File) {
+        target.parentFile?.mkdirs()
+        target.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    /**
      * Decodes the picker's image at a bounded size. A launcher icon is 512 px at most, and
      * `BitmapFactory` on a full-resolution phone photo would allocate hundreds of megabytes before
      * the scale-down ever ran.
      */
-    private fun decodeBounded(uri: Uri): Bitmap? {
+    private fun decodeBounded(uri: Uri, maxPx: Int): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         context.contentResolver.openInputStream(uri)?.use {
             BitmapFactory.decodeStream(it, null, bounds)
@@ -219,8 +281,8 @@ class AppIconManager(
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
         var sample = 1
-        while (bounds.outWidth / sample > MAX_CUSTOM_ICON_PX * 2 ||
-            bounds.outHeight / sample > MAX_CUSTOM_ICON_PX * 2
+        while (bounds.outWidth / sample > maxPx * 2 ||
+            bounds.outHeight / sample > maxPx * 2
         ) {
             sample *= 2
         }
@@ -231,7 +293,10 @@ class AppIconManager(
     }
 
     fun clearCustomIcon() {
-        runCatching { customIconFile().delete() }
+        runCatching {
+            customIconFile().delete()
+            customIconSourceFile().delete()
+        }
     }
 
     fun customIconBitmap(): Bitmap? = runCatching {
@@ -267,8 +332,29 @@ class AppIconManager(
         }
     }
 
-    private fun Bitmap.scaledToSquare(maxPx: Int): Bitmap {
-        val side = minOf(width, height)
+    /**
+     * CROP fills the square by cutting the overflowing edges; FIT keeps the whole image and pads
+     * the shorter side with transparency. Both paths scale smoothly instead of nearest-neighbour,
+     * because a launcher icon is displayed at a fraction of the source resolution.
+     */
+    private fun Bitmap.toSquareIcon(maxPx: Int, mode: CustomIconScaleMode): Bitmap {
+        if (mode == CustomIconScaleMode.FIT) {
+            val scale = min(maxPx.toFloat() / width, maxPx.toFloat() / height)
+            val scaledWidth = (width * scale).roundToInt().coerceIn(1, maxPx)
+            val scaledHeight = (height * scale).roundToInt().coerceIn(1, maxPx)
+            val scaled = Bitmap.createScaledBitmap(this, scaledWidth, scaledHeight, true)
+            val square = Bitmap.createBitmap(maxPx, maxPx, Bitmap.Config.ARGB_8888)
+            Canvas(square).drawBitmap(
+                scaled,
+                (maxPx - scaledWidth) / 2f,
+                (maxPx - scaledHeight) / 2f,
+                Paint(Paint.FILTER_BITMAP_FLAG),
+            )
+            if (scaled !== this) scaled.recycle()
+            return square
+        }
+
+        val side = min(width, height)
         val left = (width - side) / 2
         val top = (height - side) / 2
         val square = Bitmap.createBitmap(this, left, top, side, side)
@@ -276,13 +362,27 @@ class AppIconManager(
             return Bitmap.createScaledBitmap(this, maxPx, maxPx, true)
         }
         val scaled = Bitmap.createScaledBitmap(square, maxPx, maxPx, true)
-        if (square !== this) square.recycle()
+        square.recycle()
         return scaled
+    }
+
+    /** Bounds the stored source; it only needs enough pixels to re-derive a 512 px icon. */
+    private fun Bitmap.scaledToFit(maxPx: Int): Bitmap {
+        val longest = maxOf(width, height)
+        if (longest <= maxPx) return this
+        val scale = maxPx.toFloat() / longest
+        return Bitmap.createScaledBitmap(
+            this,
+            (width * scale).roundToInt().coerceAtLeast(1),
+            (height * scale).roundToInt().coerceAtLeast(1),
+            true,
+        )
     }
 
     companion object {
         const val DEFAULT_ICON_ID = "default"
         private const val SHORTCUT_ID = "houri_custom_launcher"
         private const val MAX_CUSTOM_ICON_PX = 512
+        private const val MAX_CUSTOM_ICON_SOURCE_PX = 1024
     }
 }

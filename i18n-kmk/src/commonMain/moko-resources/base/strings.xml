@@ -961,6 +961,10 @@
     <string name="pref_app_custom_icon_pick">Choose image</string>
     <string name="pref_app_custom_icon_remove">Remove image</string>
     <string name="pref_app_custom_icon_pick_failed">Could not read that image</string>
+    <string name="pref_app_custom_icon_scale_summary">Crop fills the icon by trimming the edges; Fit keeps the whole image, with transparent bars where it is not square.</string>
+    <string name="pref_app_custom_icon_scale_crop">Crop</string>
+    <string name="pref_app_custom_icon_scale_fit">Fit</string>
+    <string name="pref_app_custom_icon_scale_failed">Could not rebuild the custom icon</string>
     <string name="pref_app_shortcut_summary">Adds a shortcut using the custom image and name. Your launcher may ask for confirmation.</string>
     <string name="pref_app_shortcut_button">Add home-screen shortcut</string>
     <string name="pref_app_shortcut_unavailable">This launcher does not support pinned shortcuts</string>

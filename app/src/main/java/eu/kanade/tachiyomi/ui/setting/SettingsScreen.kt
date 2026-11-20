@@ -52,7 +52,6 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.result.LocalResultEventBus
 import dev.icerock.moko.resources.StringResource
 import eu.kanade.presentation.components.AppBar
-import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.more.settings.screen.SearchableSettings
 import eu.kanade.presentation.more.settings.screen.SettingsAchievementsRoute
 import eu.kanade.presentation.more.settings.screen.SettingsAdvancedRoute
@@ -74,7 +73,6 @@ import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
 import eu.kanade.tachiyomi.BuildConfig
 import exh.assets.EhAssets
 import exh.assets.ehassets.EhLogo
-import kotlinx.collections.immutable.persistentListOf
 import mihon.core.navigation.AboutRoute
 import mihon.core.navigation.SettingsRoute
 import mihon.core.navigation.SettingsSearchRoute
@@ -167,17 +165,6 @@ fun SettingsScreen() {
                     } else {
                         backStack.removeLastOrNull()
                     }
-                },
-                actions = {
-                    AppBarActions(
-                        persistentListOf<AppBar.AppBarAction>(
-                            AppBar.Action(
-                                title = stringResource(MR.strings.action_search),
-                                icon = Icons.Outlined.Search,
-                                onClick = { backStack.navigate(SettingsSearchRoute, isTabletUi) },
-                            ),
-                        ),
-                    )
                 },
                 scrollBehavior = scrollBehavior,
             )

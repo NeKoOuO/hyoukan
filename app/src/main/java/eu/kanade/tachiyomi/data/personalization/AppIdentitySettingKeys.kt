@@ -13,8 +13,9 @@ object AppIdentitySettingKeys {
 
     val selectedIcon = SettingKey("pref_app_icon_id", AppIconManager.DEFAULT_ICON_ID)
     val customName = SettingKey("pref_app_display_name", "")
+    val customIconScale = SettingKey("pref_app_custom_icon_scale", AppIconManager.CustomIconScaleMode.CROP.id)
 
-    val all = listOf(selectedIcon, customName)
+    val all = listOf(selectedIcon, customName, customIconScale)
 }
 
 /** Registers the identity keys so the global uniqueness check covers them. */

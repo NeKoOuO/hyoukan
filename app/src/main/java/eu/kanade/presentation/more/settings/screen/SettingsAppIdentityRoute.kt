@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -44,6 +45,7 @@ import androidx.navigation3.runtime.NavKey
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.more.settings.widget.PrefsHorizontalPadding
 import eu.kanade.tachiyomi.data.personalization.AppIconManager
+import eu.kanade.tachiyomi.data.personalization.AppIconManager.CustomIconScaleMode
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.Dispatchers
@@ -83,6 +85,8 @@ data object SettingsAppIdentityRoute : NavKey, SearchableRoute {
         val activeIcon = remember(iconTick) { manager.activeIcon() }
         val customIcon = remember(customTick) { manager.customIconBitmap() }
         val customName by manager.customAppName.collectAsState()
+        val customScale by manager.customIconScale.collectAsState()
+        val scaleMode = CustomIconScaleMode.fromId(customScale)
         val fallbackName = stringResource(tachiyomi.i18n.MR.strings.app_name)
         val shortcutLabel = customName.ifBlank { fallbackName }
 
@@ -204,6 +208,35 @@ data object SettingsAppIdentityRoute : NavKey, SearchableRoute {
                                         }
                                     }
                                 }
+                                Text(
+                                    text = stringResource(KMR.strings.pref_app_custom_icon_scale_summary),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    CustomIconScaleMode.entries.forEach { option ->
+                                        FilterChip(
+                                            selected = scaleMode == option,
+                                            onClick = {
+                                                if (scaleMode != option) {
+                                                    scope.launch {
+                                                        val applied = withContext(Dispatchers.IO) {
+                                                            manager.applyCustomIconScaleMode(option)
+                                                        }
+                                                        if (applied) {
+                                                            customTick++
+                                                        } else {
+                                                            context.toast(
+                                                                KMR.strings.pref_app_custom_icon_scale_failed,
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            label = { Text(stringResource(option.labelRes())) },
+                                        )
+                                    }
+                                }
                                 if (customIcon != null || customName.isNotBlank()) {
                                     Button(
                                         onClick = {
@@ -258,6 +291,11 @@ data object SettingsAppIdentityRoute : NavKey, SearchableRoute {
             ),
         )
     }
+}
+
+private fun CustomIconScaleMode.labelRes() = when (this) {
+    CustomIconScaleMode.CROP -> KMR.strings.pref_app_custom_icon_scale_crop
+    CustomIconScaleMode.FIT -> KMR.strings.pref_app_custom_icon_scale_fit
 }
 
 /** One icon tile: the adaptive-icon preview, its name, and a check mark for the active choice. */

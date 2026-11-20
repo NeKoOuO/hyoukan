@@ -10,6 +10,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -22,7 +24,19 @@ import tachiyomi.presentation.core.util.collectAsState
 fun LogoHeader() {
     // KMK --> The custom launcher name is allowed to surface here: it is an identity choice, and
     // About is the one place inside the app that names the app at all.
-    val customName by globalAppGraph.appIconManager.customAppName.collectAsState()
+    //
+    // A missing custom name must never take the screen down: this is a cosmetic label, and the
+    // manager used to be able to throw while resolving it (see app/AGENTS.md). A failure now
+    // simply means "no custom name".
+    val namePreference = remember {
+        runCatching { globalAppGraph.appIconManager.customAppName }.getOrNull()
+    }
+    val nameState = if (namePreference != null) {
+        namePreference.collectAsState()
+    } else {
+        remember { mutableStateOf("") }
+    }
+    val customName by nameState
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,

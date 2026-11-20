@@ -39,6 +39,14 @@ method getPackageName() ... in class java.lang.Class`, and because `LogoHeader` 
 instead: `MainActivity::class.java.name.substringBeforeLast('.')` is available on every API level
 and is exactly the package the manifest aliases sit in.
 
+**The custom name is in-app only.** Android has no runtime API to rename an installed app's launcher
+entry, and nothing in this code tries to: `customName` is a SharedPreferences string shown by
+`LogoHeader` and used as the pinned shortcut's label. Never wire it into a future "rename the app"
+attempt — the only supported path is another activity alias with its own fixed label. The picked
+custom image is stored twice: `launcher_icon_source.png` (bounded to 1024 px, full aspect) and the
+square `launcher_icon.png` derived from it, so the Crop/Fit choice can be reapplied without asking
+for the image again.
+
 ## Baked-in Komga source (KMK)
 
 `app/src/main/java/eu/kanade/tachiyomi/source/online/all/komga/` — a self-hosted Komga server
