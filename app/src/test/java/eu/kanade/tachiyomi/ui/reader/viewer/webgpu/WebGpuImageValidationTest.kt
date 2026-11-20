@@ -236,7 +236,8 @@ class WebGpuImageValidationTest {
         val little = ByteArray(16)
         little[0] = 'I'.code.toByte()
         little[1] = 'I'.code.toByte()
-        be16(little, 2, 42)
+        // "II" declares little-endian, so the 42 magic is stored low byte first.
+        le16(little, 2, 42)
         acceptedFormatOf(little) shouldBe ImageFormat.TIFF
 
         val big = ByteArray(16)
