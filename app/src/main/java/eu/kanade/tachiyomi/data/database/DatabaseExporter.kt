@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.data.database
 
 import android.content.Context
 import android.net.Uri
+import app.cash.sqldelight.db.SqlDriver
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -25,6 +26,7 @@ import mihon.core.concurrency.AppDispatchersHolder
 class DatabaseExporter(
     private val context: Context,
     private val securityPreferences: SecurityPreferences,
+    private val driver: SqlDriver,
     private val ioDispatcher: CoroutineDispatcher = AppDispatchersHolder.get().io,
 ) {
 
@@ -89,12 +91,12 @@ class DatabaseExporter(
     }
 
     private fun maintenanceManager(): DatabaseMaintenanceManager {
-        val encrypted = isEncrypted()
-        if (encrypted) System.loadLibrary("sqlcipher")
+        // The live driver already targets the encrypted or plaintext file; opening a second
+        // connection here is what produced SQLITE_IOERR_SHMOPEN on WAL databases.
         return DatabaseMaintenanceManager(
             context = context,
-            databaseName = liveDatabaseName(encrypted),
-            passphrase = if (encrypted) CbzCrypto.getDecryptedPasswordSql() else null,
+            driver = driver,
+            databaseName = liveDatabaseName(),
         )
     }
 

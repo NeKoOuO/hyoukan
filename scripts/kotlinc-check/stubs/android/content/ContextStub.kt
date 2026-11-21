@@ -23,6 +23,11 @@ open class Context {
 
     /** Enough of the preference API for `WebGpuHealth`'s strike bookkeeping. */
     fun getSharedPreferences(name: String, mode: Int): SharedPreferences = SharedPreferences()
+
+    /** Enough of the storage API for `DatabaseMaintenanceManager`'s file paths. */
+    val filesDir: java.io.File = java.io.File("/tmp/kotlinc-check-files")
+
+    fun getDatabasePath(name: String): java.io.File = java.io.File("/tmp/kotlinc-check-db", name)
 }
 
 /** Offline stub for check.sh. */

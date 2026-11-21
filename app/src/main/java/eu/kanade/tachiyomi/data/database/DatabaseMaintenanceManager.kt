@@ -1,8 +1,8 @@
 package eu.kanade.tachiyomi.data.database
 
 import android.content.Context
-import android.database.Cursor
-import android.database.sqlite.SQLiteDatabase
+import app.cash.sqldelight.db.QueryResult
+import app.cash.sqldelight.db.SqlDriver
 import exh.log.xLogE
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,26 +20,59 @@ private const val PRAGMA_WAL_CHECKPOINT_FULL = "PRAGMA wal_checkpoint(FULL)"
 private const val PRAGMA_QUICK_CHECK = "PRAGMA quick_check(1)"
 
 /** `wal_checkpoint`'s `busy` column when no reader blocked the checkpoint. */
-private const val CHECKPOINT_NOT_BUSY = "0"
+internal const val CHECKPOINT_NOT_BUSY = "0"
 
-private enum class IntegrityResult { OK, CORRUPT, FAILED }
+internal enum class IntegrityResult { OK, CORRUPT, FAILED }
+
+/** Maps `PRAGMA quick_check`'s single value to what the startup pass should do about it. */
+internal fun integrityResultOf(verdict: String?): IntegrityResult = when (verdict?.lowercase()) {
+    "ok" -> IntegrityResult.OK
+    null -> IntegrityResult.FAILED
+    else -> IntegrityResult.CORRUPT
+}
+
+/** A checkpoint only folded every committed frame when no reader kept it busy. */
+internal fun checkpointCleared(busy: String?): Boolean = busy == CHECKPOINT_NOT_BUSY
+
+/**
+ * Runs [sql] on the app's own connection and returns column 0 of its first row.
+ *
+ * Top-level and Android-free so it can be asserted against a fake [SqlDriver]; reading `.value`
+ * matters because SQLDelight's query result is lazy and a result nobody consumes never runs.
+ */
+internal fun SqlDriver.queryScalar(sql: String): String? {
+    return executeQuery(
+        identifier = null,
+        sql = sql,
+        mapper = { cursor ->
+            val hasRow = cursor.next().value
+            QueryResult.Value(if (hasRow) cursor.getString(0) else null)
+        },
+        parameters = 0,
+    ).value
+}
 
 /**
  * Protects the SQLite database against corruption and wipes by combining three
- * measures, all executed directly on the database file before the app's own
- * connection pool opens it:
+ * measures, all executed on the app's own live connection:
  *
  * - a startup integrity probe with automatic recovery from the latest backup,
  * - a rolling local backup refreshed at most once per day,
  * - quarantining an unrecoverable database instead of crash-looping.
  *
- * Supports both plaintext databases ([passphrase] null) and SQLCipher
- * encrypted ones (passphrase supplied, e.g. from CbzCrypto).
+ * All SQL runs through the app's own [driver], i.e. the same connection SQLDelight uses. Opening
+ * a second connection here was the source of `SQLITE_IOERR_SHMOPEN` (POSIX EBADF) while WAL was
+ * live: the framework SQLite and requery's bundled SQLite are different native libraries, and a
+ * reader opened through one while the other owns the `-shm` file sees a foreign lock owner
+ * (0xaaaaaaaa). The driver also selects plaintext versus SQLCipher internally, so passphrases and
+ * `System.loadLibrary("sqlcipher")` have no place here.
+ *
+ * [databaseName] is only used to locate the file for backups and for log messages.
  */
 class DatabaseMaintenanceManager(
     private val context: Context,
+    private val driver: SqlDriver,
     private val databaseName: String = DEFAULT_DATABASE_NAME,
-    private val passphrase: ByteArray? = null,
 ) {
 
     private val backupDir get() = File(context.filesDir, BACKUP_DIR_NAME)
@@ -60,49 +93,16 @@ class DatabaseMaintenanceManager(
         }
     }
 
-    /** Returns the first column of the single row produced by [sql], or null when unavailable. */
-    private fun rawQueryScalar(sql: String, readOnly: Boolean): String? {
-        return if (passphrase == null) {
-            val flags = if (readOnly) SQLiteDatabase.OPEN_READONLY else SQLiteDatabase.OPEN_READWRITE
-            val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, null, flags)
-            try {
-                db.rawQuery(sql, null).use(Cursor::readScalar)
-            } finally {
-                db.close()
-            }
-        } else {
-            // Same library load AppModule performs; repeated loads are no-ops
-            System.loadLibrary("sqlcipher")
-            val flags = if (readOnly) {
-                net.zetetic.database.sqlcipher.SQLiteDatabase.OPEN_READONLY
-            } else {
-                net.zetetic.database.sqlcipher.SQLiteDatabase.OPEN_READWRITE
-            }
-            val db = net.zetetic.database.sqlcipher.SQLiteDatabase.openDatabase(
-                dbFile.absolutePath,
-                passphrase,
-                null,
-                flags,
-                null,
-            )
-            try {
-                db.rawQuery(sql, emptyArray<Any>()).use(Cursor::readScalar)
-            } finally {
-                db.close()
-            }
-        }
-    }
+    /**
+     * Returns the first column of the single row produced by [sql], or null when unavailable.
+     *
+     * Executed on [driver] so a `quick_check` or WAL checkpoint uses the connection that owns the
+     * `-shm` file, not a second one with a different native SQLite library.
+     */
+    private fun rawQueryScalar(sql: String): String? = driver.queryScalar(sql)
 
-    private fun integrityCheckResult(): IntegrityResult {
-        val verdict = runCatching { rawQueryScalar(PRAGMA_QUICK_CHECK, readOnly = true) }
-            .getOrNull()
-            ?.lowercase()
-        return when (verdict) {
-            "ok" -> IntegrityResult.OK
-            null -> IntegrityResult.FAILED
-            else -> IntegrityResult.CORRUPT
-        }
-    }
+    private fun integrityCheckResult(): IntegrityResult =
+        integrityResultOf(runCatching { rawQueryScalar(PRAGMA_QUICK_CHECK) }.getOrNull())
 
     private fun latestBackup(): File? {
         return backupDir.listFiles()
@@ -159,27 +159,27 @@ class DatabaseMaintenanceManager(
     suspend fun prepareSnapshot(): File? = withContext(Dispatchers.IO) {
         if (!dbFile.isFile || dbFile.length() == 0L) return@withContext null
 
-        val truncated = runCatching { queryRow(PRAGMA_WAL_CHECKPOINT_TRUNCATE, readOnly = false) }
+        val truncated = runCatching { queryRow(PRAGMA_WAL_CHECKPOINT_TRUNCATE) }
             .onFailure { xLogE("WAL truncate checkpoint failed", it) }
             .getOrNull()
-        if (truncated == CHECKPOINT_NOT_BUSY) return@withContext verifiedOrNull()
+        if (checkpointCleared(truncated)) return@withContext verifiedOrNull()
 
-        val full = runCatching { queryRow(PRAGMA_WAL_CHECKPOINT_FULL, readOnly = false) }
+        val full = runCatching { queryRow(PRAGMA_WAL_CHECKPOINT_FULL) }
             .onFailure { xLogE("WAL full checkpoint failed", it) }
             .getOrNull()
-        if (full == CHECKPOINT_NOT_BUSY) return@withContext verifiedOrNull()
+        if (checkpointCleared(full)) return@withContext verifiedOrNull()
 
         xLogE("$databaseName could not be checkpointed; refusing to export a stale copy")
         null
     }
 
     /** Column 0 of the pragma's single row, or null when the pragma did not answer. */
-    private suspend fun queryRow(sql: String, readOnly: Boolean): String? = withContext(Dispatchers.IO) {
-        runCatching { rawQueryScalar(sql, readOnly) }.getOrNull()
+    private suspend fun queryRow(sql: String): String? = withContext(Dispatchers.IO) {
+        runCatching { rawQueryScalar(sql) }.getOrNull()
     }
 
     private suspend fun verifiedOrNull(): File? {
-        val quickCheck = queryRow(PRAGMA_QUICK_CHECK, readOnly = true)
+        val quickCheck = queryRow(PRAGMA_QUICK_CHECK)
         if (!quickCheck.equals("ok", ignoreCase = true)) {
             xLogE("$databaseName failed the pre-export quick check: $quickCheck")
             return null
@@ -192,7 +192,7 @@ class DatabaseMaintenanceManager(
         if (newest != null && System.currentTimeMillis() - newest.lastModified() < BACKUP_INTERVAL_MS) return
 
         runCatching {
-            rawQueryScalar(PRAGMA_WAL_CHECKPOINT_TRUNCATE, readOnly = false)
+            rawQueryScalar(PRAGMA_WAL_CHECKPOINT_TRUNCATE)
             backupDir.mkdirs()
             val target = File(backupDir, "$BACKUP_FILE_PREFIX${System.currentTimeMillis()}.db")
             dbFile.copyTo(target, overwrite = true)
@@ -214,9 +214,5 @@ class DatabaseMaintenanceManager(
         File(dbFile.absolutePath + "-wal").delete()
         File(dbFile.absolutePath + "-shm").delete()
     }
-}
-
-private fun Cursor.readScalar(): String? {
-    return if (moveToFirst()) getString(0) else null
 }
 // KMK <--

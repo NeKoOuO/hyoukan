@@ -188,10 +188,13 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         // KMK -->
         ProcessLifecycleOwner.get().lifecycleScope.launchIO {
             kotlinx.coroutines.delay(2000)
+            // Runs on the app's own SQLDelight connection, never a second one: a second native
+            // SQLite library opening the same WAL database fails with SQLITE_IOERR_SHMOPEN
+            // (POSIX EBADF) because it cannot use the -shm file the live driver owns.
             val manager = if (globalAppGraph.securityPreferences.encryptDatabase().get()) {
-                DatabaseMaintenanceManager(this@App, CbzCrypto.DATABASE_NAME, CbzCrypto.getDecryptedPasswordSql())
+                DatabaseMaintenanceManager(this@App, globalAppGraph.sqlDriver, CbzCrypto.DATABASE_NAME)
             } else {
-                DatabaseMaintenanceManager(this@App)
+                DatabaseMaintenanceManager(this@App, globalAppGraph.sqlDriver)
             }
             runCatching { manager.performStartupMaintenance() }
                 .onFailure { xLogE("Database startup maintenance failed", it) }

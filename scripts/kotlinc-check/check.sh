@@ -97,6 +97,7 @@ aar_classes() {
 EXTRA_CP=""
 for spec in "org.jetbrains.kotlinx/kotlinx-serialization-core-jvm:kotlinx-serialization-core" \
             "org.jetbrains.kotlinx/kotlinx-serialization-json-jvm:kotlinx-serialization-json" \
+            "app.cash.sqldelight/runtime-jvm:runtime-jvm" \
             "dev.zacsweers.metro/metro-common:metro-common" \
             "dev.zacsweers.metro/runtime-jvm:metro-runtime" \
             "com.squareup.okhttp3/okhttp-jvm:okht" \
