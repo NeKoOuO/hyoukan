@@ -19,6 +19,11 @@ on:
         required: false
         default: false
         type: boolean
+      publish-beta:
+        description: 'Publish this build as the next beta release (and ping beta testers)'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -277,9 +282,11 @@ jobs:
     name: Publish beta release
     needs: build
     runs-on: 'ubuntu-24.04'
-    # Pushes only, and only from master: a manual dispatch of an older ref must not take over a
-    # newer beta tag.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    # Pushes always publish; manual runs only when publish-beta is checked. Either way, only
+    # from master: a dispatch of an older ref must not take over a newer beta tag. The
+    # concurrency group above cancels any in-progress run for this ref, so a manual run still
+    # cannot publish after a newer push.
+    if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish-beta)) && github.ref == 'refs/heads/master'
     outputs:
       # Consumed by notify-beta-discord below. `released` gates the ping so a
       # skipped publish (no BETA_RELEASE_TOKEN) never announces a beta.
