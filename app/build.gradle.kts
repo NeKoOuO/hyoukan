@@ -373,11 +373,11 @@ dependencies {
 
     // Mihon -->
     implementation("ca.mpreg:webgpuviewer:0.0.0")
-    // KMK --> Must match external/webgpuviewer-houri/gradle/libs.versions.toml. dev06 is the
-    // Dawn bump upstream made after our fork point: its newer Dawn carries the ImgTec/PowerVR
-    // and oversized-row copy workarounds that stop the swapchain wedging on those devices
-    // (issue #90). The app used to pin dev05 while the library compiled against dev06.
-    implementation("androidx.webgpu:webgpu:1.0.0-dev06")
+    // KMK --> androidx.webgpu comes transitively from the library (api dependency), exactly as in
+    // Mihon. Do not pin it here: the custom mpreg-ca repo re-published 1.0.0-dev06 with a native
+    // library whose JNI entry points no longer match its classes, which broke every GPU call with
+    // "No implementation found for androidx.webgpu.GPU.createInstance". The official alpha06 from
+    // google() is the coordinate Mihon ships and the one the library is built against.
     implementation(libs.imagedecoder)
     implementation(libs.kim)
     // Mihon <--

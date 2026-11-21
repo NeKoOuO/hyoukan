@@ -197,9 +197,9 @@
 
 # WebGPU / Dawn — the JNI entry points (Java_androidx_webgpu_*, e.g. GPU.createInstance)
 # are bound by class and method name. Pin the wrapper and the renderer here instead of
-# relying on the library AAR's consumer rules: it reaches the app through an includeBuild
-# and an AAR transform, so losing those rules in a minified beta turns into
-# "No implementation found ... createInstance" and a silently absent high-quality reader.
+# relying on the library's consumer rules: it reaches the app through an includeBuild, so
+# losing those rules in a minified beta turns into "No implementation found ... createInstance"
+# and a silently absent high-quality reader.
 -keep class androidx.webgpu.** { *; }
 -keep class ca.mpreg.webgpuviewer.** { *; }
 # KMK <--
