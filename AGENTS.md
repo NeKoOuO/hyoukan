@@ -268,7 +268,11 @@ Full map: `app/.../exh/AGENTS.md`.
 Build types: `debug` (`.dev`), `release`, `releaseTest` (`.rt`), `foss` (`.foss`), `preview` (`.beta`, CI default), `benchmark`.
 Engine flavors: `mtl` (default, → `:yakuyomi`) / `nomtl` (`.nomtl`, → `:yakuyomi-stub`, no telemetry).
 `preview` and `benchmark` use the **debug signing key**; `release` is unsigned at build time —
-signing happens only in CI (`r0adkll/sign-android-release`). No `signingConfigs` block in `app/build.gradle.kts`.
+signing happens only in CI, through the repo-local composite action `.github/actions/sign-apk`
+(`apksigner` from `$ANDROID_HOME/build-tools`, one invocation per APK, bounded by `timeout` and
+fed `/dev/null` on stdin). It replaced `r0adkll/sign-android-release`, whose step intermittently
+never finished after signing, leaving the run paused until it was cancelled. No
+`signingConfigs` block in `app/build.gradle.kts`.
 
 Gradle `-P` flags (`buildSrc/.../BuildConfig.kt`): `include-telemetry`, `enable-updater`,
 `disable-code-shrink`, `include-dependency-info`.

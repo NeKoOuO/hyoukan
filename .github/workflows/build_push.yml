@@ -218,26 +218,22 @@ jobs:
           path: app/build/reports/tests/testDebugUnitTest
 
       - name: Sign APK
-        uses: r0adkll/sign-android-release@f30bdd30588842ac76044ecdbd4b6d0e3e813478
+        uses: ./.github/actions/sign-apk
         with:
           releaseDirectory: app/build/outputs/apk/mtl/preview
           signingKeyBase64: ${{ secrets.SIGNING_KEY }}
           alias: ${{ secrets.ALIAS }}
           keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
           keyPassword: ${{ secrets.KEY_PASSWORD }}
-        env:
-          BUILD_TOOLS_VERSION: '35.0.1'
 
       - name: Sign nomtl APK
-        uses: r0adkll/sign-android-release@f30bdd30588842ac76044ecdbd4b6d0e3e813478
+        uses: ./.github/actions/sign-apk
         with:
           releaseDirectory: app/build/outputs/apk/nomtl/preview
           signingKeyBase64: ${{ secrets.SIGNING_KEY }}
           alias: ${{ secrets.ALIAS }}
           keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
           keyPassword: ${{ secrets.KEY_PASSWORD }}
-        env:
-          BUILD_TOOLS_VERSION: '35.0.1'
 
       # Beta assets use the same shape as a stable release (Houri-<abi>-<tag>.apk), with the
       # commit-count tag the preview updater compares against. ReleaseServiceImpl finds the
@@ -293,6 +289,9 @@ jobs:
       changes: ${{ steps.notes.outputs.CHANGES }}
       change_count: ${{ steps.notes.outputs.CHANGE_COUNT }}
       released: ${{ steps.token.outputs.available }}
+    # Downloading artifacts, signing and publishing take about a minute; this bounds a
+    # wedged network call instead of letting it sit until the 6h default.
+    timeout-minutes: 30
 
     steps:
       - name: Clone repo

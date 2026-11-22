@@ -1,0 +1,150 @@
+name: Sign Android APKs
+description: >-
+  Zipalign-check, sign and verify every APK in a directory with the Android SDK's own
+  apksigner. Replaces r0adkll/sign-android-release, whose step intermittently never
+  finished after signing and left the run paused until it was cancelled. Every tool
+  invocation here is time-bounded and reads /dev/null on stdin, so a wedged JVM or a
+  password prompt fails the step in seconds instead of hanging it.
+
+inputs:
+  releaseDirectory:
+    description: Directory holding the APKs to sign (all *.apk files in it)
+    required: true
+  signingKeyBase64:
+    description: Base64-encoded JKS/PKCS12 signing keystore
+    required: true
+  alias:
+    description: Key alias inside the keystore
+    required: true
+  keyStorePassword:
+    description: Keystore password
+    required: true
+  keyPassword:
+    description: Key password, when it differs from the keystore password
+    required: false
+    default: ''
+  buildToolsVersion:
+    description: Build-tools version to prefer; falls back to the newest installed one
+    required: false
+    default: '35.0.1'
+
+outputs:
+  signedCount:
+    description: Number of APKs signed
+    value: ${{ steps.sign.outputs.signedCount }}
+
+runs:
+  using: composite
+  steps:
+    - name: Sign APKs
+      id: sign
+      shell: bash
+      env:
+        RELEASE_DIR: ${{ inputs.releaseDirectory }}
+        SIGNING_KEY_BASE64: ${{ inputs.signingKeyBase64 }}
+        KEY_ALIAS: ${{ inputs.alias }}
+        KEYSTORE_PASSWORD: ${{ inputs.keyStorePassword }}
+        KEY_PASSWORD: ${{ inputs.keyPassword }}
+        PREFERRED_BUILD_TOOLS: ${{ inputs.buildToolsVersion }}
+      run: |
+        set -euo pipefail
+
+        dir="${RELEASE_DIR%/}"
+        if [[ ! -d "$dir" ]]; then
+          echo "::error::releaseDirectory '$dir' does not exist"
+          exit 1
+        fi
+
+        sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+        if [[ -z "$sdk" || ! -d "$sdk/build-tools" ]]; then
+          echo "::error::ANDROID_HOME/ANDROID_SDK_ROOT is unset or has no build-tools (value: '$sdk')"
+          exit 1
+        fi
+
+        # Prefer the pinned version so the signer does not silently change; fall back to the
+        # newest installed one when a runner image no longer ships that exact build-tools.
+        build_tools=""
+        if [[ -n "$PREFERRED_BUILD_TOOLS" && -x "$sdk/build-tools/$PREFERRED_BUILD_TOOLS/apksigner" ]]; then
+          build_tools="$sdk/build-tools/$PREFERRED_BUILD_TOOLS"
+        else
+          while IFS= read -r candidate; do
+            if [[ -x "$sdk/build-tools/$candidate/apksigner" ]]; then
+              build_tools="$sdk/build-tools/$candidate"
+              break
+            fi
+          done < <(find "$sdk/build-tools" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort -Vr)
+        fi
+        if [[ -z "$build_tools" ]]; then
+          echo "::error::No apksigner found under $sdk/build-tools"
+          exit 1
+        fi
+        echo "Using build-tools at $build_tools"
+
+        # Keep the keystore out of the workspace so it can never end up in an artifact,
+        # and readable by this user only.
+        keystore="${RUNNER_TEMP:-/tmp}/signing-key.jks"
+        trap 'rm -f "$keystore"' EXIT
+        umask 077
+        printf '%s' "$SIGNING_KEY_BASE64" | tr -d '[:space:]' | base64 -d > "$keystore"
+        if [[ ! -s "$keystore" ]]; then
+          echo "::error::Decoded signing key is empty"
+          exit 1
+        fi
+
+        shopt -s nullglob
+        apks=("$dir"/*.apk)
+        if [[ ${#apks[@]} -eq 0 ]]; then
+          echo "::error::No .apk files in '$dir'"
+          exit 1
+        fi
+
+        signed=0
+        for apk in "${apks[@]}"; do
+          case "$apk" in
+            *-signed.apk | *-aligned.apk) continue ;;
+          esac
+          out="${apk%.apk}-signed.apk"
+          echo "Signing $apk"
+
+          # AGP already zipaligned the APK during packaging; assert it the way the old
+          # action did, without its -v entry dump (which is thousands of log lines).
+          timeout 60 "$build_tools/zipalign" -c 4 "$apk" > /dev/null < /dev/null
+
+          # apksigner prompts on stdin for a key password it does not get, and a prompt
+          # on a pipe nobody writes to never returns. Always supply one: the key's own
+          # password when configured, else the keystore password (apksigner's documented
+          # fallback), so there is no path that can ask.
+          if [[ -n "$KEY_PASSWORD" ]]; then
+            key_pass_args=(--key-pass env:KEY_PASSWORD)
+          else
+            key_pass_args=(--key-pass env:KEYSTORE_PASSWORD)
+          fi
+
+          # stdin is /dev/null and each attempt is time-bounded: a password prompt or a
+          # wedged JVM now fails the step instead of stalling it until the job timeout.
+          attempt=1
+          until timeout 300 "$build_tools/apksigner" sign \
+              --ks "$keystore" \
+              --ks-key-alias "$KEY_ALIAS" \
+              --ks-pass env:KEYSTORE_PASSWORD \
+              "${key_pass_args[@]}" \
+              --out "$out" "$apk" < /dev/null; do
+            if ((attempt >= 2)); then
+              echo "::error::apksigner failed for $apk"
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            echo "::warning::apksigner failed for $apk, retrying once"
+            sleep 2
+          done
+
+          timeout 60 "$build_tools/apksigner" verify --print-certs "$out" < /dev/null
+          signed=$((signed + 1))
+        done
+
+        if [[ $signed -eq 0 ]]; then
+          echo "::error::Nothing was signed in '$dir' (only already-signed APKs present?)"
+          exit 1
+        fi
+        echo "Signed $signed APK(s) in $dir"
+        echo "signedCount=$signed" >> "$GITHUB_OUTPUT"
