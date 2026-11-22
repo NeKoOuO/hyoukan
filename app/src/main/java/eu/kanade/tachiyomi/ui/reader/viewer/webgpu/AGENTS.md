@@ -936,7 +936,7 @@ above — a type mismatch that a compiler will not catch.
 
 | Symptom in logcat | Where to look |
 |---|---|
-| `No surface texture: Error` repeating from the first frame, screen black, no crash | The swapchain is wedged (PowerVR field signature). The renderer now escalates: `swapchain error streak ... recreating the surface` after 30 failed frames, `parking until the surface changes` after 120. If you see endless spam with no recreate line, the escalation was reverted — check `surfaceErrorStreak` in `WebGpuRenderer.render`. |
+| `No surface texture: Error` repeating from the first frame, screen black, no crash | The swapchain is wedged (PowerVR field signature). The renderer now escalates: `swapchain error streak ... recreating the surface` after 30 failed frames, `parking until the surface changes` after 120. If you see endless spam with no recreate line, the escalation was reverted — check `surfaceErrorStreak` in `WebGpuRenderer.render`. **A session that goes quiet before either line is the old `collect()` retry cap**: it parked the loop after 10 Retry frames, below both thresholds, so the escalation never ran and no park was recorded. `FrameResult.Retry` now always re-arms; the renderer owns the bound. |
 | `Decode skipped ... state=DECODING` storms next to an `Evicted`/`Queued` loop | A page evicted between its queue insert and the worker pop kept DECODING — the one state `queueForDecode` refuses to re-queue. Both worker exit paths now reset DECODING unconditionally (the page is out of the worker's hands either way). If it returns, check the skip path's reset in `startDecodeWorker`. |
 | `adapter is "consumed"` | Device is permanently dead. Nothing above it recovers. Check `recreateDeviceLocked` re-requests an adapter. |
 | `WebGPU not available: ...` from `decodeReaderPage` | `requireAvailable()` failed inside an upload. Same root cause; it is a *symptom*, not the bug. |
@@ -948,6 +948,9 @@ above — a type mismatch that a compiler will not catch.
 | Page index and the index in the segment cache key disagree | They are separate identifiers; `splitOversizedPage` now orders by the key and refuses a non-contiguous run. |
 | Page spins on the placeholder forever, no log line at all | Should now log `Re-driving ... loading-stalled`. If it still does not, the page is not LOADING — check `wantedByRender` and whether `imagePage` is really a `ProgressPage`. |
 | `Re-driving ... last=threw` | The decode threw; read the exception above it in the log for the real reason. |
+| `Render error` in the system logcat, screen black, session looks healthy | The **draw** threw (pipeline validation, bind group, shader creation) and `render()` used to swallow it into `FrameResult.Drawn`. It now retries 30 frames and parks as `Unavailable`; the thrown exception is the actual defect. Read it, not the decode trace. |
+| `Tile draw failed for WxH; using the fast page path` | The tile cache's pipeline/atlas is broken on this driver; the page is now drawn directly and should be visible. The line's stack trace names the failing WebGPU call — that is the defect to fix if tiled quality matters on the device. |
+| Screen black while the app logs a healthy renderer, no decode or GPU error | Check the **viewer container's layer type**. `ReaderActivity.setLayerPaint` used to force `LAYER_TYPE_HARDWARE` unconditionally; a `TextureView` (the WebGPU surface below API 34) under an ancestor hardware layer is an extra compositing hop that has presented as a black frame on PowerVR-class HWUI. The layer is now set only while a grayscale/inverted-colour paint actually exists. |
 | `Re-driving ... last=unfinished` | The worker left the page mid-flight without completing a trace. Usually cancellation. |
 | `DecodeTrace STALL` | The watchdog saw a page past its stage deadline. The worker cannot report its own stall. |
 | `Device not available` / blank pages after backgrounding | Device loss; check the recovery path above, not the page. |
@@ -1446,6 +1449,14 @@ this folder went to logcat, and the person who sees the bug is holding a phone w
   produce answers a reader question too.
 
 A clean session writes nothing to the in-app log: the log is read by someone chasing a problem.
+
+The session header carries `gpu=` — vendor, architecture, device, description and **backend**
+from `WebGpuRenderer.adapterDescription`. That backend is load-bearing for a field report: Dawn on
+Android may run Vulkan or fall back to OpenGLES, and the PowerVR failures documented above are
+Vulkan-shaped. The library's own logs go through `android.util.Log`, not the app's `logcat { }`
+bus, so a dump also appends the own-process **system logcat** (`LogcatCapture.systemSnapshot`) —
+without it a phone-only report cannot carry an uncaptured validation error, a shader compile
+failure, or the adapter line at all.
 
 ## WHERE THINGS ARE
 

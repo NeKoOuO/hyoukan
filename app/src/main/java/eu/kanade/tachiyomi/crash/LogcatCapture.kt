@@ -138,6 +138,50 @@ object LogcatCapture : LogcatLogger {
     /** Snapshot of the current ring, oldest first. */
     fun snapshot(): List<String> = synchronized(lock) { lines.toList() }
 
+    /**
+     * Last lines of this process's **system** logcat, oldest first.
+     *
+     * The in-app ring only sees lines the app itself routes through `logcat { }` / `xLog*`.
+     * The GPU stack does not: `WebGpuRenderer`, `TileRenderer` and Dawn log through
+     * `android.util.Log`, and those are exactly the lines a black-screen or pipeline-failure
+     * report needs (adapter/backend, uncaptured validation errors, swapchain errors). Reading
+     * our own process's buffer needs no permission, and `--pid` keeps another app's traffic out.
+     *
+     * Best-effort by construction: any failure (exec denied, logcat buffer empty, an OEM
+     * `logcat` that rejects `--pid`) answers an empty list rather than failing the dump.
+     */
+    fun systemSnapshot(maxLines: Int = 1_500): List<String> {
+        fun read(vararg command: String): String? = try {
+            val process = ProcessBuilder(*command).redirectErrorStream(true).start()
+            try {
+                process.inputStream.bufferedReader().use { it.readText() }
+            } finally {
+                runCatching { process.destroy() }
+            }
+        } catch (_: Exception) {
+            null
+        }
+
+        val pid = android.os.Process.myPid().toString()
+        val text = read(
+            "logcat",
+            "-d",
+            "-v",
+            "threadtime",
+            "-t",
+            maxLines.toString(),
+            "--pid",
+            pid,
+        )?.takeIf { it.isNotBlank() && !it.contains("unknown option") }
+            ?: read("logcat", "-d", "-v", "threadtime", "-t", maxLines.toString())
+            ?: return emptyList()
+
+        return text.lineSequence()
+            .filter { it.isNotBlank() }
+            .toList()
+            .takeLast(maxLines)
+    }
+
     /** Number of lines currently held. */
     fun size(): Int = synchronized(lock) { lines.size }
 

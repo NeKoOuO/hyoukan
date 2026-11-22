@@ -77,6 +77,18 @@ class CrashLogUtil(
                         val ring = eu.kanade.tachiyomi.crash.LogcatCapture.snapshot()
                         appendLine("=== LOG CAT (last ${minOf(ring.size, 1000)} lines of ring) ===")
                         ring.takeLast(1000).forEach { appendLine(it) }
+                        // KMK --> The GPU libraries log through android.util.Log, not the app's
+                        // logcat bus, so the ring above cannot carry a renderer/driver failure.
+                        // Own-process logcat is readable without a permission; this is where a
+                        // WebGPU adapter line, an uncaptured validation error or a swapchain
+                        // error streak appears in a phone-only dump.
+                        val system = eu.kanade.tachiyomi.crash.LogcatCapture.systemSnapshot()
+                        if (system.isNotEmpty()) {
+                            appendLine()
+                            appendLine("=== SYSTEM LOGCAT (own process, last ${system.size} lines) ===")
+                            system.forEach { appendLine(it) }
+                        }
+                        // KMK <--
                     },
                 )
                 out

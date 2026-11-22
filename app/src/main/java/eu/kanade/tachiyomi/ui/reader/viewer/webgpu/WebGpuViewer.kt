@@ -22,6 +22,7 @@ import ca.mpreg.webgpuviewer.reader.PageAnchor
 import ca.mpreg.webgpuviewer.reader.ReaderState
 import ca.mpreg.webgpuviewer.reader.SettingsImpact
 import ca.mpreg.webgpuviewer.renderer.UpscalerArtCnn
+import ca.mpreg.webgpuviewer.renderer.WebGpuRenderer
 import ca.mpreg.webgpuviewer.viewer.ImagePage
 import ca.mpreg.webgpuviewer.viewer.ImageViewerContinuousState
 import com.google.android.material.color.MaterialColors
@@ -769,11 +770,18 @@ open class WebGpuViewer(
         // override after super construction), so a continuous viewer used to describe itself as
         // `continuous=false` in every dump - the one line a report leads with.
         val continuousHeader = pager is ca.mpreg.webgpuviewer.ImageViewContinuous
-        WebGpuDiagnostics.beginSession(
+        // KMK --> The backend is the fact a PowerVR report turns on (Vulkan vs the GLES
+        // fallback), and it was the one thing no dump carried: the library logged it to
+        // logcat only. Read through the same instance the pager drives. Logged at open as well
+        // as close, because a session that never draws does not trip `isNotable()` and would
+        // otherwise leave no header anywhere the user can reach.
+        val sessionHeader =
             "tier=${memoryBudget.deviceTier} budget=${memoryBudget.describe()} " +
                 "preload=${config.preloadAhead}/${config.preloadBehind} workers=${decodeParallelism()} " +
-                "continuous=$continuousHeader dual=${if (continuousHeader) false else isDualPageMode()}",
-        )
+                "continuous=$continuousHeader dual=${if (continuousHeader) false else isDualPageMode()} " +
+                "gpu=${WebGpuRenderer.adapterDescription}"
+        logcat(LogPriority.INFO) { "WebGPU session: $sessionHeader" }
+        WebGpuDiagnostics.beginSession(sessionHeader)
         // KMK <--
         startDecodeWorker()
         startStuckPageSweep()

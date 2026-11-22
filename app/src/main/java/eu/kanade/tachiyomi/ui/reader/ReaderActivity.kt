@@ -21,6 +21,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.View.LAYER_TYPE_HARDWARE
+import android.view.View.LAYER_TYPE_NONE
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -2155,7 +2156,18 @@ class ReaderActivity : BaseActivity() {
         }
         private fun setLayerPaint(grayscale: Boolean, invertedColors: Boolean) {
             val paint = if (grayscale || invertedColors) getCombinedPaint(grayscale, invertedColors) else null
-            binding.viewerContainer.setLayerType(LAYER_TYPE_HARDWARE, paint)
+            // KMK --> The hardware layer exists to carry the colour-filter paint. Setting one with
+            // no paint buys nothing and costs a full-screen offscreen texture for every reader -
+            // GPU memory the WebGPU page budget does not know about, on the very devices where it
+            // is tightest - and a TextureView (the WebGPU surface below API 34) composited through
+            // an ancestor layer is an extra hop that has presented as a black frame on some
+            // drivers. Leave the default layer type unless a filter is actually on, and clear a
+            // layer left by a previous filter when it is turned off again.
+            // KMK <--
+            binding.viewerContainer.setLayerType(
+                if (paint != null) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE,
+                paint,
+            )
         }
     }
 
