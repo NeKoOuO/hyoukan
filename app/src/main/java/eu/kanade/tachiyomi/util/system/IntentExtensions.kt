@@ -29,7 +29,16 @@ fun Uri.toShareIntent(context: Context, type: String = "image/*", message: Strin
     }
 
     return Intent.createChooser(shareIntent, context.stringResource(MR.strings.action_share)).apply {
-        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        // KMK --> The chooser is what the system actually starts, and system_server (uid 1000,
+        // `ChooserActivity`) reads the stream URI out of it to build the target preview/metadata.
+        // The grant lived only on the inner intent, so that read was unauthorised and the provider
+        // logged `DatabaseUtils: SecurityException ... requires the provider be exported, or
+        // grantUriPermission()` on every share (2026-11-22 field dump). Grant on the chooser too,
+        // and mirror the ClipData so the permission travels with the intent rather than only with
+        // EXTRA_STREAM.
+        // KMK <--
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        clipData = shareIntent.clipData
     }
 }
 

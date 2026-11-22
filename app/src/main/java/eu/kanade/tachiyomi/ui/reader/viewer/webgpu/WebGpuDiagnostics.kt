@@ -105,6 +105,16 @@ internal object WebGpuDiagnostics {
     @Volatile
     private var pageDrawn: Boolean = false
 
+    /**
+     * Frames the renderer actually presented this session, recorded once at close.
+     *
+     * Distinct from [pageDrawn] on purpose: that flag is set by the render walk before a frame is
+     * submitted, so it says "a page was in the drawn set", never "the display was written". A
+     * black screen needs both numbers to be diagnosable - see `SessionFacts.presentedFrames`.
+     */
+    @Volatile
+    private var presentedFrames: Int = 0
+
     private val ladder = LinkedHashMap<String, Int>()
 
     private val budgets = ArrayDeque<String>()
@@ -135,6 +145,7 @@ internal object WebGpuDiagnostics {
             failedRecoveries = 0
             parks = 0
             pageDrawn = false
+            presentedFrames = 0
             ladder.clear()
             budgets.clear()
             lastBudget = "none"
@@ -166,6 +177,17 @@ internal object WebGpuDiagnostics {
     /** Records that the last frame put a page on screen. Idempotent; called from the render walk. */
     fun recordPageDrawn() {
         pageDrawn = true
+    }
+
+    /**
+     * Records how many frames the renderer actually presented this session.
+     *
+     * Called once at close from the viewer's own snapshot delta, not per frame: the renderer
+     * owns the counter and the reader never reads it on a hot path. Zero with pages decoded is
+     * the shape no earlier report could state - see `SessionFacts.presentedFrames`.
+     */
+    fun recordPresentedFrames(frames: Int) {
+        presentedFrames = frames
     }
 
     /** One finished decode: how it ended, how long it took, and whether it had to be downsampled. */
@@ -253,6 +275,7 @@ internal object WebGpuDiagnostics {
                 failedRecoveries = failedRecoveries,
                 parks = parks,
                 pageDrawn = pageDrawn,
+                presentedFrames = presentedFrames,
                 ladder = ladder.toMap(),
                 budgets = budgets.toList(),
                 lastBudget = lastBudget,
@@ -271,7 +294,7 @@ internal object WebGpuDiagnostics {
             appendLine(
                 "  downsampled=${snapshot.downsampled} stalls=${snapshot.stalls} " +
                     "evictions=${snapshot.evictions} worstChurn=${snapshot.worstChurn} " +
-                    "drawn=${snapshot.pageDrawn}",
+                    "drawn=${snapshot.pageDrawn} frames=${snapshot.presentedFrames}",
             )
             appendLine(
                 "  deviceLosses=${snapshot.deviceLosses} recoveries=${snapshot.recoveries} " +
@@ -341,6 +364,7 @@ internal object WebGpuDiagnostics {
         val failedRecoveries: Int,
         val parks: Int,
         val pageDrawn: Boolean,
+        val presentedFrames: Int,
         val ladder: Map<String, Int>,
         val budgets: List<String>,
         val lastBudget: String,

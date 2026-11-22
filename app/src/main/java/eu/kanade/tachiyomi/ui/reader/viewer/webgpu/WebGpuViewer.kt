@@ -654,6 +654,17 @@ open class WebGpuViewer(
         pager.state.renderer.surfaceParkCount
     }.getOrDefault(0)
 
+    /**
+     * The renderer's presented-frame count at viewer construction - see
+     * `WebGpuRenderer.presentedFrames`. Diffed at `destroy()` to answer the one question a
+     * black-screen report could never answer before: was the display ever written at all?
+     * `drawn=true, frames=0` is the renderer/surface never reaching `present()`; `frames>0` is a
+     * draw or compositing defect. Read the INSTANCE for the same reason as the park count.
+     */
+    private val presentedFramesAtStart = runCatching {
+        pager.state.renderer.presentedFrames
+    }.getOrDefault(0L)
+
     private val deviceLostListener =
         ca.mpreg.webgpuviewer.renderer.WebGpuRenderer.Companion.DeviceLostListener { _, _ ->
             if (isDestroyed) return@DeviceLostListener
@@ -1088,6 +1099,15 @@ open class WebGpuViewer(
             }.getOrDefault(0)
             val parkedThisSession = parksThisSession > 0
             WebGpuDiagnostics.recordPark(parksThisSession)
+            // KMK --> The presenter's own count, not the walk's flag. Recorded before the
+            // verdict so the strike line and the diagnostics block carry the same number.
+            val framesThisSession = runCatching {
+                (pager.state.renderer.presentedFrames - presentedFramesAtStart)
+                    .coerceIn(0L, Int.MAX_VALUE.toLong())
+                    .toInt()
+            }.getOrDefault(0)
+            WebGpuDiagnostics.recordPresentedFrames(framesThisSession)
+            // KMK <--
             // KMK --> The verdict is one named decision ([sessionVerdict], Android-free so
             // SessionHealthHarness asserts every branch offline), not four inline conditions.
             //
@@ -1106,6 +1126,7 @@ open class WebGpuViewer(
                     decodedPages = WebGpuDiagnostics.decodedPages(),
                     durationMs = WebGpuDiagnostics.sessionDurationMs(),
                     anyPageDrawn = WebGpuDiagnostics.anyPageDrawn(),
+                    presentedFrames = framesThisSession,
                     deviceLosses = sessionDeviceLosses.get(),
                 ),
             )
@@ -1114,6 +1135,7 @@ open class WebGpuViewer(
                 logcat(LogPriority.WARN) {
                     "WebGPU session ended degraded ($verdict): deadAtExit=$deadAtExit, " +
                         "parks=$parksThisSession, drawn=${WebGpuDiagnostics.anyPageDrawn()}, " +
+                        "frames=$framesThisSession, " +
                         "decodes=${WebGpuDiagnostics.decodedPages()}, " +
                         "losses=${sessionDeviceLosses.get()} - strike recorded"
                 }

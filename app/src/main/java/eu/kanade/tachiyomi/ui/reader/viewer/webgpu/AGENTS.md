@@ -361,6 +361,15 @@ read once at close. **Rule: a degraded-session verdict is computed from facts ac
 session, never from the state at the moment the session ends.** The same applies to any future
 condition added here — `parks`, losses and recoveries are already counters, and the one sampled
 condition was the one that misfired.
+
+**`anyPageDrawn` alone was still a claim, not a proof, and 2026-11-22 showed it.** The render walk
+publishes the on-screen set in `captureRenderState` *before* `renderer.render` is even called, so a
+session whose frames never reached `present()` reports `drawn=true`. The verdict therefore requires
+both halves now: `SessionFacts.presentedFrames` (the renderer's own `presentedFrames` counter,
+diffed against the viewer's construction-time snapshot) and `anyPageDrawn`. `frames=0` with pages
+decoded and five seconds elapsed is the never-presented shape; `frames>0` with `drawn=false` is the
+drew-but-invisible shape. Both strike. **Rule: a fact named "drawn" must come from the thing that
+draws, never from the walk that requested it.**
 - **`androidx.webgpu` comes from `google()`, exactly as in Mihon — never from a custom repo, and
   never declared by the app.** The submodule's `library/build.gradle.kts` exposes it as `api`, so
   the version its classes were compiled against is the version the app runs; that is the same Maven
@@ -950,7 +959,9 @@ above — a type mismatch that a compiler will not catch.
 | `Re-driving ... last=threw` | The decode threw; read the exception above it in the log for the real reason. |
 | `Render error` in the system logcat, screen black, session looks healthy | The **draw** threw (pipeline validation, bind group, shader creation) and `render()` used to swallow it into `FrameResult.Drawn`. It now retries 30 frames and parks as `Unavailable`; the thrown exception is the actual defect. Read it, not the decode trace. |
 | `Tile draw failed for WxH; using the fast page path` | The tile cache's pipeline/atlas is broken on this driver; the page is now drawn directly and should be visible. The line's stack trace names the failing WebGPU call — that is the defect to fix if tiled quality matters on the device. |
-| Screen black while the app logs a healthy renderer, no decode or GPU error | Check the **viewer container's layer type**. `ReaderActivity.setLayerPaint` used to force `LAYER_TYPE_HARDWARE` unconditionally; a `TextureView` (the WebGPU surface below API 34) under an ancestor hardware layer is an extra compositing hop that has presented as a black frame on PowerVR-class HWUI. The layer is now set only while a grayscale/inverted-colour paint actually exists. |
+| Screen black while the app logs a healthy renderer, no decode or GPU error | Check the **viewer container's layer type**. `ReaderActivity.setLayerPaint` used to force `LAYER_TYPE_HARDWARE` unconditionally; a `TextureView` (the WebGPU surface below API 34) under an ancestor hardware layer is an extra compositing hop that has presented as a black frame on PowerVR-class HWUI. The layer is now set only while a grayscale/inverted-colour paint actually exists. **Read `frames=` before theorising**: `frames=0` means the renderer never submitted/presented a frame (surface or frame-loop defect); `frames>0` with `drawn=false` means frames reached the display and the page never painted (draw or compositing defect). |
+| `drawn=true` in the diagnostics block and the screen is still black | `drawn` is **not** a presentation proof. It is set by the render walk (`resolveFetchedPage(0)`) from `imagePage.isOnScreen`, which `captureRenderState` publishes *before* the frame is submitted — so a session whose frames all returned `Retry`/`Unavailable` still reads `drawn=true`. That is exactly how the 2026-11-22 Mali-G76 black screen (RMX2151, `tier=MEDIUM`, thirteen decodes, no error, no park) closed as healthy and struck nothing. Read `frames=` instead: it is `WebGpuRenderer.presentedFrames`, incremented only after `present()` returns. |
+| A page is black while its neighbours draw, no error, tiled page | The tiled renderer answered "covered" after blitting nothing, so `drawLive` skipped the direct page draw. That skip is gone: **the page is painted under the tiles on every frame** (`ImageSingle.drawLive`) and the tiles blit over it, so no coverage answer can hide the page. `TileRenderer.drawCore` also reports coverage only when it actually blitted, and the empty-placement branch answers *not* covered. If a page is still blank on the tiled path, the underlay itself is failing — check `renderPage`/`renderWith` and `hasUploadedImage`. |
 | `Re-driving ... last=unfinished` | The worker left the page mid-flight without completing a trace. Usually cancellation. |
 | `DecodeTrace STALL` | The watchdog saw a page past its stage deadline. The worker cannot report its own stall. |
 | `Device not available` / blank pages after backgrounding | Device loss; check the recovery path above, not the page. |
@@ -1369,7 +1380,7 @@ thing that runs.
 | `ChapterPreloadGuardHarness` | one winner per key, release and re-begin, stale requeue, blank/oversized keys, the key-set cap |
 | `ColumnWidthHarness` | the continuous reader's column width: percent-per-side padding, monotonicity, the 20% floor, degenerate screens |
 | `DiagnosticsHarness` | the session report: a clean session is not notable, every anomaly is, the bounded rings stay bounded, and `render()` never throws |
-| `SessionHealthHarness` | the strike verdict: a chapter transition at exit is healthy (the regression), the black screen needs two decodes and five seconds (inclusive), the four degraded shapes' precedence, negative counters, and HEALTHY as the only clean verdict |
+| `SessionHealthHarness` | the strike verdict: a chapter transition at exit is healthy (the regression), the black screen needs two decodes and five seconds (inclusive) **and both a presented frame and a page on screen** (the 2026-11-22 shape - walk flag true, `frames=0` - is struck), the four degraded shapes' precedence, negative counters, and HEALTHY as the only clean verdict |
 | `WebGpuHealthHarness` | the strike record's transitions: the threshold, the cap, the build scope (foreign and untagged counts discarded, re-tag on the next strike), a clean session clearing, the reset |
 | `WebGpuOfferHarness` | the provider's gate order: switch → health latch → renderer probe, that the probe is skipped once an earlier gate declines (it initialises the GPU device), and the precedence between all three |
 
@@ -1457,6 +1468,12 @@ Vulkan-shaped. The library's own logs go through `android.util.Log`, not the app
 bus, so a dump also appends the own-process **system logcat** (`LogcatCapture.systemSnapshot`) —
 without it a phone-only report cannot carry an uncaptured validation error, a shader compile
 failure, or the adapter line at all.
+
+The block's `frames=` is `WebGpuRenderer.presentedFrames` diffed across the session — the count of
+frames that reached `surface.present()`. It exists because `drawn=` cannot answer the question a
+black-screen report asks: `drawn` is the walk's optimistic flag (see *A strike is a session
+verdict*), while `frames` is the presenter's. **`frames=0` is the never-presented black screen;
+`frames>0, drawn=false` is the drew-but-invisible one.** Always state both when comparing reports.
 
 ## WHERE THINGS ARE
 

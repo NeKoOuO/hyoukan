@@ -21,6 +21,18 @@ internal data class SessionFacts(
     val durationMs: Long,
     /** Whether any page was ever on screen - a session-wide fact, not the exit page. */
     val anyPageDrawn: Boolean,
+    /**
+     * Frames the renderer actually submitted and presented this session
+     * (`WebGpuRenderer.presentedFrames`, diffed against the viewer's construction-time snapshot).
+     *
+     * This is the one fact that separates the two black-screen shapes. `anyPageDrawn` is set by
+     * the render *walk* before a frame is submitted, so a session that never reached the display
+     * at all still reports it: the 2026-11-22 Mali field log showed `drawn=true`, twelve decodes,
+     * no error and no park - and a black screen. `frames=0` means the surface was never written
+     * (renderer/surface defect); `frames>0` with nothing drawn means the draw or the compositing
+     * is at fault. Without it the rule below could only ever see the walk's optimistic flag.
+     */
+    val presentedFrames: Int,
     /** Device losses this session, recovered or not. */
     val deviceLosses: Int,
 )
@@ -59,9 +71,13 @@ internal fun sessionVerdict(facts: SessionFacts): SessionVerdict = when {
     facts.deadAtExit -> SessionVerdict.DEAD_AT_EXIT
     facts.surfaceParks > 0 -> SessionVerdict.PARKED
     facts.deviceLosses >= WebGpuHealthPolicy.SESSION_LOSS_STRIKE_THRESHOLD -> SessionVerdict.LOSS_THRASH
+    // Both halves are required: the walk's flag says a page was in the drawn set, and the
+    // presenter's count says the display was ever written. Either being absent with pages
+    // decoded and time elapsed is a session with nothing on screen - and the walk's flag alone
+    // was exactly what made the 2026-11-22 black screen close as healthy.
     facts.decodedPages >= NEVER_DREW_MIN_DECODES &&
         facts.durationMs >= NEVER_DREW_MIN_MS &&
-        !facts.anyPageDrawn -> SessionVerdict.NEVER_DREW
+        !(facts.anyPageDrawn && facts.presentedFrames > 0) -> SessionVerdict.NEVER_DREW
 
     else -> SessionVerdict.HEALTHY
 }

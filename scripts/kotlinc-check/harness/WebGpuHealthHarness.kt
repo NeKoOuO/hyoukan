@@ -46,6 +46,7 @@ private fun chapterToTheEnd() = SessionFacts(
     decodedPages = 40,
     durationMs = 600_000L,
     anyPageDrawn = true,
+    presentedFrames = 12_000,
     deviceLosses = 0,
 )
 
@@ -55,6 +56,7 @@ private fun blackScreen() = SessionFacts(
     decodedPages = 6,
     durationMs = 9_000L,
     anyPageDrawn = false,
+    presentedFrames = 0,
     deviceLosses = 0,
 )
 

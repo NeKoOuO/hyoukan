@@ -24,6 +24,7 @@ class WebGpuSessionHealthTest {
         decodedPages: Int = 10,
         durationMs: Long = 60_000L,
         anyPageDrawn: Boolean = true,
+        presentedFrames: Int = 600,
         deviceLosses: Int = 0,
     ) = SessionFacts(
         deadAtExit = deadAtExit,
@@ -31,6 +32,7 @@ class WebGpuSessionHealthTest {
         decodedPages = decodedPages,
         durationMs = durationMs,
         anyPageDrawn = anyPageDrawn,
+        presentedFrames = presentedFrames,
         deviceLosses = deviceLosses,
     )
 

@@ -32,6 +32,7 @@ private fun facts(
     decodedPages: Int = 10,
     durationMs: Long = 60_000L,
     anyPageDrawn: Boolean = true,
+    presentedFrames: Int = 600,
     deviceLosses: Int = 0,
 ) = SessionFacts(
     deadAtExit = deadAtExit,
@@ -39,6 +40,7 @@ private fun facts(
     decodedPages = decodedPages,
     durationMs = durationMs,
     anyPageDrawn = anyPageDrawn,
+    presentedFrames = presentedFrames,
     deviceLosses = deviceLosses,
 )
 
@@ -57,6 +59,16 @@ fun main() {
     check(
         "pages decoded and never drawn is the black screen",
         sessionVerdict(facts(anyPageDrawn = false)) == SessionVerdict.NEVER_DREW,
+    )
+    // The 2026-11-22 shape: the walk reported a page on screen, the renderer never presented a
+    // frame. `anyPageDrawn` alone read that as healthy and struck nothing.
+    check(
+        "a page in the drawn set with zero presented frames is the black screen",
+        sessionVerdict(facts(anyPageDrawn = true, presentedFrames = 0)) == SessionVerdict.NEVER_DREW,
+    )
+    check(
+        "frames presented with no page drawn is still the black screen",
+        sessionVerdict(facts(anyPageDrawn = false, presentedFrames = 600)) == SessionVerdict.NEVER_DREW,
     )
     check(
         "one decoded page is not enough to judge",

@@ -110,6 +110,12 @@ for MAIN in "$HARNESS_DIR"/*Harness.kt; do
     if [ "$NAME" = "DecodeQueueHarness" ]; then
         SOURCES+=("$REPO_ROOT/app/src/main/java/eu/kanade/tachiyomi/ui/reader/viewer/webgpu/PriorityDecodeQueue.kt")
     fi
+    # The tile-coverage rule is the answer "the tiles painted this page", which decided whether
+    # the paged viewer drew the page directly at all - the 2026-11-22 black screen. One pure file
+    # in the renderer submodule, no Android imports, compiled here directly for the same reason.
+    if [ "$NAME" = "TileCoverageHarness" ]; then
+        SOURCES+=("$REPO_ROOT/external/webgpuviewer-houri/library/src/main/java/ca/mpreg/webgpuviewer/renderer/TileCoverage.kt")
+    fi
     # The highlights model is pure but carries the framework's `@JavascriptInterface` marker on
     # its bridge; the harness gets the one-line stub rather than dragging Android in.
     if [ "$NAME" = "PlainTextHarness" ]; then
