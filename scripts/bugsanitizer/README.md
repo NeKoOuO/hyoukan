@@ -1,13 +1,15 @@
 # bugsanitizer
 
 One-script gradle console wrapper. **Not part of the app build** — it just
-wraps `./gradlew`. User-run only (agents never run gradle in this repo).
+wraps `./gradlew`. This is the preferred way for agents to run gradle too:
+pass `--agent` for a timestamped trace of every step the script takes.
 
 ## Usage
 
 ```bash
 scripts/bugsanitizer/run.sh                            # default sweep
 scripts/bugsanitizer/run.sh :app:compileDebugKotlin    # any gradle args
+scripts/bugsanitizer/run.sh --agent :app:assembleDebug # trace every bsan step
 scripts/bugsanitizer/run.sh --quiet :app:assembleDebug # errors only, no progress
 scripts/bugsanitizer/run.sh --stall 15 --timeout 60    # tuned hang protection
 scripts/bugsanitizer/run.sh --fresh                    # stop daemons, then sweep
@@ -22,6 +24,7 @@ Flags (consumed by the script, never forwarded to gradle):
 | Flag | Effect |
 |------|--------|
 | *(default)* | `[bsan]` task progress + error lines + final `BUILD SUCCESSFUL/FAILED` |
+| `--agent` | timestamped `[agent]` trace of every bsan step (stderr + `agent-trace.log`); independent of `--quiet`/`--verbose` |
 | `--quiet` | error lines only (plus a one-line run header and the final status) |
 | `--verbose` | everything gradle prints, warnings included |
 | `--stall <min>` | hang watchdog: kill the gradle client after `<min>` with no log output. Default **10**, `0` disables, decimals OK (`--stall 0.5` = 30s). While silent 3+ min it prints one `[bsan] still silent…` note per minute |
@@ -83,6 +86,17 @@ actually succeeded (rc 0).
 Console lines go through `sed 's/ /  /g'` (git-log look); remove that `sed`
 from the script if you want plain lines.
 
+## Agent mode
+
+`--agent` adds a timestamped `[agent]` line for every decision the script makes
+— path resolution, flag parsing, lock, init-script generation, console/
+client/watchdog PIDs, gradle exit code, watchdog reason, diagnosis result, final
+status. It traces the script's own control flow (unlike `--verbose`, which is
+about gradle's output), works alongside `--quiet`/`--verbose`, and is stripped
+from the args passed to gradle. Lines go straight to stderr and are appended to
+`agent-trace.log` (cleared each run), so they never pollute `full.txt` or
+`errors.log`. Intended for agents running a build on the programmer's request.
+
 ## Files
 
 | Path | Behavior |
@@ -92,6 +106,7 @@ from the script if you want plain lines.
 | `<git-dir>/bugsanitizer/last-run.txt` | plain record of each run: start banner, watchdog config, final status or interrupt/kill note |
 | `<git-dir>/bugsanitizer/init.settings.gradle.kts` | generated each run; logs `[bsan] starting/finished/FAILED :task` via a `TaskExecutionListener` inside an init script injected with `-I` |
 | `<git-dir>/bugsanitizer/kill-reason` | written only when the watchdog kills the build (`stall: …` / `timeout: …`) |
+| `<git-dir>/bugsanitizer/agent-trace.log` | step-by-step `[agent]` trace, only with `--agent`; cleared each run |
 
 ## Exit codes
 

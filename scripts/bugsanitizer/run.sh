@@ -7,9 +7,11 @@
 #                                                        #  app:assembleDebug)
 #   scripts/bugsanitizer/run.sh <gradle args>            # any task set / flags (--stacktrace etc.)
 #   scripts/bugsanitizer/run.sh --fresh <gradle args>    # stop daemons first, then the sweep
+#   scripts/bugsanitizer/run.sh --agent <gradle args>    # TRACE every step bsan takes
 #   scripts/bugsanitizer/run.sh --stop                   # ONLY ./gradlew --stop (no build)
 #
 # Flags consumed here (never forwarded to gradle):
+#   --agent             log every step the script takes (stderr + agent-trace.log)
 #   --verbose           show everything gradle prints
 #   --quiet             show ONLY error lines (no banner, no task progress)
 #   --stall <minutes>   hang watchdog: kill the gradle client when the log has
@@ -60,27 +62,59 @@
 #   <git-dir>/bugsanitizer/init.settings.gradle.kts  generated each run, injected via -I;
 #                                                   task listener prints [bsan] start/finish
 #                                                   lines WITH per-task duration
+#   <git-dir>/bugsanitizer/agent-trace.log          step-by-step [agent] trace (only with --agent)
 #
 # Exit code is gradle's own; 124 when the stall/timeout watchdog killed the
 # build; 130 when interrupted. Always runs at the repo root (cds there first).
 # One sweep per tree: a non-blocking lock refuses concurrent builds in the same
 # worktree (--stop stays lock-free — it is the unwedge tool).
 
+# --agent: opt-in step-by-step trace of the script's OWN control flow (distinct
+# from --verbose, which is about gradle's output). Pre-scanned here, before the
+# cd and the real flag parse below, so even path resolution is traced. The main
+# parser also consumes --agent so it never reaches gradle.
+agent=0
+for _a in "$@"; do
+    [ "$_a" = "--agent" ] && agent=1
+done
+
+# agent_trace <message> — timestamped trace of one step. Written straight to
+# stderr (bypasses the console filter, so it never pollutes full.txt) and
+# appended to <git-dir>/bugsanitizer/agent-trace.log once that path is known.
+agent_trace_file=""
+agent_trace() {
+    [ "$agent" = 1 ] || return 0
+    local ts
+    ts=$(date '+%H:%M:%S.%N')
+    printf '%s [agent] %s\n' "$ts" "$1" >&2
+    [ -n "$agent_trace_file" ] && printf '%s [agent] %s\n' "$ts" "$1" >> "$agent_trace_file"
+}
+
 # Always resolve and cd to the repo root, and derive the per-tree git-internal
 # store via rev-parse: in a plain checkout GIT_DIR is `.git`; in a linked
 # worktree (`.git` is a FILE) GIT_DIR is `<main>/.git/worktrees/<name>`. Both
 # are invisible to `git status`. Hardcoding `.git/bugsanitizer` breaks linked
 # worktrees (mkdir on a file) — that is why nothing is hardcoded.
+agent_trace "agent mode enabled — tracing every bsan step"
+agent_trace "step: resolve repo root (git rev-parse --show-toplevel)"
 root=$(git rev-parse --show-toplevel 2>/dev/null) || {
     echo "[bsan] run this inside the repo (needs a git work tree)" >&2
     exit 2
 }
 cd "$root" || exit 2
+agent_trace "repo root = $root (cwd set)"
+agent_trace "step: resolve per-tree git store (git rev-parse --git-path bugsanitizer)"
 hidden=$(git rev-parse --git-path bugsanitizer 2>/dev/null) || {
     echo "[bsan] cannot resolve the per-tree git dir (rev-parse --git-path)" >&2
     exit 2
 }
 mkdir -p "$hidden" || exit 2
+agent_trace "git-dir store = $hidden (created/verified)"
+if [ "$agent" = 1 ]; then
+    agent_trace_file="$hidden/agent-trace.log"
+    : > "$agent_trace_file"
+    agent_trace "trace file = $agent_trace_file"
+fi
 
 default_sweep=(spotlessApply spotlessCheck compileDebugUnitTestKotlin app:assembleDebug)
 log=errors.log
@@ -94,6 +128,7 @@ usage() {
 [bsan] usage: scripts/bugsanitizer/run.sh [bsan-flags] [gradle args...]
 
   bsan flags (never forwarded to gradle):
+    --agent             trace every bsan step (stderr + agent-trace.log)
     --verbose           everything gradle prints
     --quiet             errors only (+ header, final status)
     --stall <min>       kill the build after <min> of no output   (default 10, 0=off)
@@ -111,6 +146,7 @@ stall_min=10 timeout_min=0
 gradle_args=()
 while [ $# -gt 0 ]; do
     case "$1" in
+        --agent)     agent=1; shift ;;
         --verbose)   verbose=1; shift ;;
         --quiet)     quiet=1; shift ;;
         --stop)      stop_only=1; shift ;;
@@ -127,16 +163,19 @@ while [ $# -gt 0 ]; do
         *)           gradle_args+=( "$1" ); shift ;;
     esac
 done
+agent_trace "flags parsed: agent=$agent verbose=$verbose quiet=$quiet stop=$stop_only fresh=$fresh stall=${stall_min}m timeout=${timeout_min}m"
 num_ok() { awk -v v="$1" 'BEGIN{ exit (v ~ /^[0-9]+(\.[0-9]+)?$/ && v+0 >= 0) ? 0 : 1 }'; }
 num_ok "$stall_min"   || { echo "[bsan] --stall must be minutes (number ≥ 0, e.g. 10 or 0.5)" >&2; exit 2; }
 num_ok "$timeout_min" || { echo "[bsan] --timeout must be minutes (number ≥ 0, e.g. 30 or 0.5)" >&2; exit 2; }
 stall_sec=$(awk -v v="$stall_min"     'BEGIN{ printf "%d", v*60 }')
 timeout_sec=$(awk -v v="$timeout_min" 'BEGIN{ printf "%d", v*60 }')
+agent_trace "flag values validated: stall_sec=$stall_sec timeout_sec=$timeout_sec"
 if [ "$verbose" = 1 ] && [ "$quiet" = 1 ]; then
     echo "[bsan] --quiet and --verbose are mutually exclusive" >&2
     exit 2
 fi
 [ "${#gradle_args[@]}" -eq 0 ] && gradle_args=( "${default_sweep[@]}" )
+agent_trace "gradle args (${#gradle_args[@]}): ${gradle_args[*]}"
 
 # Colors: only when a real terminal is attached and the user hasn't opted out.
 # Non-TTY output stays plain (grep-able, embeddable), NO_COLOR is the standard
@@ -154,6 +193,7 @@ if [ -t 1 ] && [ -t 2 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != dumb ]; th
     C_DIM=$'\033[2m'       # secondary text — dim
     C_R=$'\033[0m'
 fi
+agent_trace "color detection complete (color=$color, NO_COLOR=${NO_COLOR:-unset}, TERM=${TERM:-unset})"
 
 # abspath <p> — usable in the done line and banner: the git-dir store is an
 # absolute path in linked worktrees, so prefixing $PWD must be conditional.
@@ -186,6 +226,7 @@ w_note() {
 }
 
 # errors.log must be gitignored (skipped when a *.log pattern already covers it).
+agent_trace "step: ensure errors.log is gitignored ($PWD/errors.log)"
 if [ ! -f .gitignore ]; then
     printf 'errors.log\n' > .gitignore
 elif ! grep -Fqx 'errors.log' .gitignore && ! grep -Eq '^\*\.log' .gitignore; then
@@ -202,14 +243,19 @@ console_re='\[bsan\]|BUILD +(SUCCESSFUL|FAILED)|'"$errors_re"
 mode_desc='errors + [bsan] progress + result'
 [ "$quiet" = 1 ] && mode_desc='errors only'
 [ "$verbose" = 1 ] && mode_desc='everything'
+agent_trace "console mode = $mode_desc (stall=${stall_min}m, cap=${timeout_min}m)"
 
+agent_trace "step: verify ./gradlew is executable at $PWD"
 [ -x ./gradlew ] || { echo "[bsan] ./gradlew not found/executable at the repo root" >&2; exit 2; }
+agent_trace "gradlew executable: yes"
 
 # --stop-only: mirrors gradle's own flag. Lock-free on purpose (see lock below).
 if [ "$stop_only" = 1 ]; then
+    agent_trace "--stop-only path: running ./gradlew --stop (no lock, no sweep)"
     bs_line "" "--stop: ./gradlew --stop" always
     ./gradlew --stop
     rc=$?
+    agent_trace "./gradlew --stop returned rc=$rc"
     bs_line "" "--stop done (rc=$rc)" always
     exit $rc
 fi
@@ -218,27 +264,35 @@ fi
 # hung sweep. gradle --stop covers gradle daemons; kotlin compile daemons are
 # separate processes and need the explicit pkill.
 if [ "$fresh" = 1 ]; then
+    agent_trace "--fresh: entering pre-lock daemon stop"
     bs_line "" "--fresh: ./gradlew --stop first" always
     ./gradlew --stop || bs_line "$C_BAD" "--stop returned rc=$? — continuing with the sweep" always
     if pkill -f KotlinCompileDaemon 2>/dev/null; then
         bs_line "$C_DIM" "--fresh: kotlin compile daemon(s) killed too" banner
     fi
+    agent_trace "--fresh: pre-lock daemon stop complete"
 fi
 
 # One sweep per tree (non-blocking). Children get the fd closed (8>&-) so an
 # orphaned build can't keep the lock after the script dies. --stop is lock-free
 # — it is the tool for unwedging a hung run and must never queue behind one.
+agent_trace "step: acquire single-sweep lock ($hidden/bsan.lock)"
 if command -v flock >/dev/null 2>&1; then
     exec 8>"$hidden/bsan.lock" || exit 2
     if ! flock -n 8; then
+        agent_trace "lock busy — refusing concurrent sweep (exit 2)"
         echo "[bsan] another bugsanitizer sweep is running in this tree — use --stop to clear it or wait" >&2
         exit 2
     fi
+    agent_trace "lock acquired (fd 8)"
+else
+    agent_trace "flock unavailable — proceeding without a lock"
 fi
 
 # Regenerate the task-lifecycle logger every run (loaded with -I). Lines go to
 # stderr (picked up by the console filter) and carry a per-task duration.
 # Quoted heredoc on purpose: ${task.path} etc. must reach the .kts literally.
+agent_trace "step: generate task-lifecycle init script at $init"
 cat > "$init" <<'BSAN_INIT'
 gradle.addListener(object : org.gradle.api.execution.TaskExecutionListener {
     private val starts = java.util.concurrent.ConcurrentHashMap<String, Long>()
@@ -266,6 +320,7 @@ gradle.addListener(object : org.gradle.api.execution.TaskExecutionListener {
     }
 })
 BSAN_INIT
+agent_trace "init script written ($(wc -l < "$init" | tr -d '[:space:]') lines)"
 
 # Colorizer: runs last in the console pipe, so full.txt and errors.log stay
 # plain-ASCII. Classifies on a spacing-normalized copy of the line, because the
@@ -359,6 +414,7 @@ start_watchdog() {
             total=$(( now - started ))
             if [ "$stall_sec" -gt 0 ]; then
                 if [ "$silent" -ge "$stall_sec" ]; then
+                    agent_trace "watchdog kill: stall — no output for ${stall_min}m (silent ${silent}s)"
                     printf 'stall: no output for %sm (silent %ss)\n' "$stall_min" "$silent" > "$reason_file"
                     kill_gradle_client
                     exit 0
@@ -369,6 +425,7 @@ start_watchdog() {
                 fi
             fi
             if [ "$timeout_sec" -gt 0 ] && [ "$total" -ge "$timeout_sec" ]; then
+                agent_trace "watchdog kill: wall clock exceeded ${timeout_min}m"
                 printf 'timeout: wall clock exceeded %sm\n' "$timeout_min" > "$reason_file"
                 kill_gradle_client
                 exit 0
@@ -384,6 +441,7 @@ start_watchdog() {
 on_interrupt() {
     trap '' INT TERM
     local sig=$1 i
+    agent_trace "interrupt (SIG$sig): tearing down watchdog, gradle client, console"
     [ -n "$watch_pid" ] && kill "$watch_pid" 2>/dev/null
     if [ -n "$gradle_pid" ] && kill -0 "$gradle_pid" 2>/dev/null; then
         kill -INT "$gradle_pid" 2>/dev/null
@@ -425,6 +483,7 @@ print_diag() {
 }
 
 # Prep files and the plain metadata record.
+agent_trace "step: clear log/full/reason files and write last-run header"
 : > "$log"
 : > "$full"
 : > "$reason_file"
@@ -434,25 +493,36 @@ cap_txt=$([ "$timeout_sec" -gt 0 ] && printf '%sm' "$timeout_min" || echo off)
     printf 'start %s · ./gradlew %s\n' "$(date '+%Y-%m-%d %H:%M:%S%z')" "${gradle_args[*]}"
     printf 'console: %s · stall-watch: %s · wall-cap: %s\n' "$mode_desc" "$stall_txt" "$cap_txt"
 } > "$lastrun"
+agent_trace "files ready: log=$log full=$full lastrun=$lastrun"
 
 bs_line "" "start $(date '+%Y-%m-%d %H:%M:%S%z') · ./gradlew ${gradle_args[*]}" always
 bs_line "$C_DIM" "console: $mode_desc · stall-watch: $stall_txt · wall-cap: $cap_txt · errors.log: $log · full: $(abspath "$full")" banner
+agent_trace "start banner printed (mode=$mode_desc, stall=$stall_txt, cap=$cap_txt)"
 
 run_started=$(date +%s)
 
+agent_trace "step: start console reader (tail -F $full through filter)"
 start_console
+agent_trace "console reader started (pid=$console_pid)"
+agent_trace "step: launch gradle client → ./gradlew -I $init --console=plain ${gradle_args[*]}"
 ./gradlew -I "$init" --console=plain "${gradle_args[@]}" 8>&- >> "$full" 2>&1 &
 gradle_pid=$!
+agent_trace "gradle client started (pid=$gradle_pid), raw output → $full"
+agent_trace "step: start watchdog (stall=${stall_sec}s, cap=${timeout_sec}s)"
 start_watchdog
+agent_trace "watchdog started (pid=$watch_pid)"
 
 wait "$gradle_pid"
 raw_rc=$?
+agent_trace "gradle client exited rc=$raw_rc after $(( $(date +%s) - run_started ))s"
 
 # Stop the watchdog before anything else (it could fire during teardown).
 [ -n "$watch_pid" ] && { kill "$watch_pid" 2>/dev/null; wait "$watch_pid" 2>/dev/null; }
+agent_trace "watchdog stopped"
 
 drain_console
 kill_console
+agent_trace "console drained and stopped"
 
 rc=$raw_rc
 reason=$(cat "$reason_file" 2>/dev/null)
@@ -472,6 +542,7 @@ elif [ "$raw_rc" -eq 137 ]; then
 elif [ "$raw_rc" -eq 143 ]; then
     bs_line "$C_DIM" "rc=143: the gradle client was SIGTERMed externally — daemons may still run: ./gradlew --stop" always
 fi
+agent_trace "rc resolved: raw=$raw_rc final=$rc reason=${reason:-none}"
 
 # Diagnosis: OOM / daemon signatures in full.txt, fix ladder quoting the
 # CURRENT gradle.properties values (read live above).
@@ -490,6 +561,7 @@ print_diag "OS SIGKILL / OOM-killer" \
 if [ "$diag_found" = 1 ]; then
     bs_line "$C_DIM" "recovery first-step for all daemon/OOM trouble: ./gradlew --stop, or rerun with --fresh" always
 fi
+agent_trace "diagnosis scan complete (signature classes matched: $diag_found)"
 
 # Slowest tasks this run, from the init script's [bsan] finished/FAILED lines.
 # Wall-clock per task (including parallel overlaps) — the top of this list is
@@ -516,6 +588,7 @@ if [ -n "$slow_tasks" ]; then
 fi
 
 # $PWD/$path prefix is conditional — see abspath() near the top.
+agent_trace "step: extract error lines from full.txt into $log"
 grep -Ea "$errors_re" "$full" > "$log"
 dur=$(( $(date +%s) - run_started ))
 dur_txt="$(( dur / 60 ))m$(( dur % 60 ))s"
@@ -536,4 +609,5 @@ else
     status="✗ rc=$rc — failed, no error lines captured ($dur_txt)"
 fi
 printf '%s · end %s\n' "$status" "$(date '+%H:%M:%S%z')" >> "$lastrun"
+agent_trace "final status: $status; trace file: $agent_trace_file"
 exit "$rc"

@@ -239,6 +239,29 @@ check "--stall without value rejected"       $([ "$rc" -eq 2 ]; echo $?)
 out=$(cd "$d" && bash "$run" --help 2>&1); rc=$?
 check "--help prints usage rc=0"             $([ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF 'bsan flags'; echo $?)
 
+# ── 18. --agent mode: step-by-step trace ───────────────────────────────────────
+d=$(mkrepo 19)
+out=$(cd "$d" && BSAN_STUB=ok bash "$run" --agent ok 2>&1); rc=$?
+check "agent rc=0"                           $([ "$rc" -eq 0 ]; echo $?)
+check "agent trace shown on stderr"          $(printf '%s' "$out" | grep -qF '[agent]'; echo $?)
+check "agent trace covers root resolution"   $(printf '%s' "$out" | grep -qF 'resolve repo root'; echo $?)
+check "agent trace covers single-sweep lock" $(printf '%s' "$out" | grep -qF 'single-sweep lock'; echo $?)
+check "agent trace covers gradle launch"     $(printf '%s' "$out" | grep -qF 'launch gradle client'; echo $?)
+check "agent trace covers final status"      $(printf '%s' "$out" | grep -qF 'final status:'; echo $?)
+check "agent trace file created"             $([ -f "$d/.git/bugsanitizer/agent-trace.log" ]; echo $?)
+check "agent trace file has steps"           $(grep -qF 'launch gradle client' "$d/.git/bugsanitizer/agent-trace.log"; echo $?)
+check "agent flag stripped from gradle args" $(grep -qF 'gradle args (1): ok' "$d/.git/bugsanitizer/agent-trace.log"; echo $?)
+check "agent trace survives --quiet"         $(cd "$d" && BSAN_STUB=ok bash "$run" --quiet --agent ok >"$base/agentq.out" 2>&1; grep -qF '[agent]' "$base/agentq.out"; echo $?)
+check "agent no leftovers"                   $(leftovers "$d"; echo $?)
+
+# ── 19. --agent traces the watchdog kill path ──────────────────────────────────
+d=$(mkrepo 20)
+out=$(cd "$d" && BSAN_STUB=hang bash "$run" --agent --stall 0.05 ok 2>&1); rc=$?
+check "agent watchdog trace rc=124"          $([ "$rc" -eq 124 ]; echo $?)
+check "agent traces stall kill"              $(printf '%s' "$out" | grep -qF 'watchdog kill: stall'; echo $?)
+check "agent traces rc resolution"           $(printf '%s' "$out" | grep -qF 'rc resolved:'; echo $?)
+check "agent watchdog no leftovers"          $(leftovers "$d"; echo $?)
+
 echo "----"
 echo "selftest: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

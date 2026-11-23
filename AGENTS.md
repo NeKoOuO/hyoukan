@@ -25,6 +25,7 @@ Houri (`applicationId app.houri`) — Android manga reader (min SDK 26, target 3
 | `core/archive/AGENTS.md` | CBZ/archive reading + encryption |
 | `presentation-core/AGENTS.md` | Shared Compose components (+ parallel SettingsItems system) |
 | `scripts/kotlinc-check/` | Offline syntax check agents may run (no Gradle) — see *Fast offline syntax check* |
+| `scripts/bugsanitizer/` | Preferred gradle wrapper — run builds with `run.sh`, add `--agent` for a full step trace |
 | `presentation-widget/AGENTS.md` | Glance home-screen widget |
 | `yakuyomi-engine/AGENTS.md` | MTL orchestration (wrapper; native engine is a submodule, commit it first) |
 | `llamatik-native/AGENTS.md` | On-device LLM runtime: vendored llama.cpp from the `external/llamatik` fork (Vulkan on by default, 64-bit ABIs only; Windows hosts build in WSL) |
@@ -35,21 +36,20 @@ Houri (`applicationId app.houri`) — Android manga reader (min SDK 26, target 3
 
 **Read this section before every change.** These rules override shortcuts (e.g. copying nearby `MR` imports or only running `compileDebugKotlin`).
 
-### Agents and builds are opt-in
+### Builds are opt-in
 
-**Do not delegate and do not build unless the user asks in the current request.**
+**Do not build unless the user asks in the current request.**
 
 | Rule | Required behavior |
 |------|-------------------|
-| Parallel agents | **Never** fire `explore` / `librarian` / `task` / background agents. Search and read the files yourself with `grep` / `glob` / `read` — the codebase is well-indexed by `AGENTS.md` and the risk of an agent touching the wrong layer outweighs the saved context. |
-| Gradle | **Never** run `./gradlew` (`spotlessApply`, `spotlessCheck`, `assembleDebug`, `compileDebugKotlin`, `installDebug`, tests, …). Make the edits, state what you changed and why, and hand the build back to the user. |
+| Gradle | When a build is requested, prefer `scripts/bugsanitizer/run.sh` over calling `./gradlew` directly — it adds progress, hang/OOM watchdogs and a full log. Add `--agent` for a timestamped trace of every step the wrapper takes. State what you changed and why alongside the result. |
 | Branch / commit | Work directly on `master`. Do not create a feature branch and do not commit unless the user asks. |
 
-The verification commands below are the **user's** to run. Report the expected result alongside the change so it can be checked in one pass. Only run a build when the user explicitly requests it in that request.
+Report the expected result alongside the change so it can be checked in one pass. Only run a build when the user explicitly requests it in that request.
 
 ### Fast offline syntax check (agents may run this)
 
-The no-Gradle rule leaves a gap: a few hundred new lines of Kotlin get zero compiler feedback, so typos, JVM signature clashes and receiver-type mistakes reach CI. `scripts/kotlinc-check/` closes that gap **without** invoking `./gradlew`.
+For fast feedback before a full build, `scripts/kotlinc-check/` closes the gap where a few hundred new lines of Kotlin get zero compiler feedback — typos, JVM signature clashes and receiver-type mistakes — **without** invoking `./gradlew`. Use it as the first pass; a real build goes through `scripts/bugsanitizer/run.sh`.
 
 ```bash
 scripts/kotlinc-check/check.sh core/archive/src/main/kotlin/mihon/core/archive/Epub*.kt
@@ -88,10 +88,11 @@ then reports the missing symbols as unresolved references far from their real li
 
 **What it is not:** not a build. Unresolved-reference diagnostics are suppressed and reported as a
 count, because almost all of them come from the absent project classpath. It runs neither spotless
-nor ktlint. It does not replace the user's `spotlessApply` → `spotlessCheck` → `assembleDebug` pass —
-it just catches the class of mistake that would otherwise only show up there.
+nor ktlint. It does not replace a real `scripts/bugsanitizer/run.sh` build — it just catches the class
+of mistake that would otherwise only show up there.
 
-This is the **only** build-adjacent command an agent may run. `./gradlew` remains off limits.
+Use it for the fast first pass; a real build is `scripts/bugsanitizer/run.sh` (see
+[Mandatory rules](#mandatory-rules-for-ai-agents)).
 
 ### Git
 
@@ -356,7 +357,7 @@ Commit messages are for developers; `RELEASE_NOTES.md` is for users. Write both.
 ./gradlew :data:generateSqlDelightInterface  # after .sq / .sqm changes
 ```
 
-**Agent verification checklist:** the user runs `spotlessApply` → `spotlessCheck` → `assembleDebug` (or `compileDebugKotlin` for a quick compile check). Agents do not run these — see [Mandatory rules](#mandatory-rules-for-ai-agents). When you make a change, state the command *and* the expected result so it can be verified in one pass.
+**Agent verification checklist:** when a build is requested, run it through `scripts/bugsanitizer/run.sh` (`--agent` for a full step trace); `scripts/kotlinc-check/` is the fast first pass. The default bsan sweep covers `spotlessApply` → `spotlessCheck` → `compileDebugUnitTestKotlin` → `assembleDebug`. State the command *and* the expected result so it can be checked in one pass.
 
 ---
 
@@ -424,7 +425,7 @@ The VM update script installs the Android SDK (platform 36, build-tools 35.0.1, 
 
 ### Running key commands
 
-These are for the **user**, not for agents (see [Mandatory rules](#mandatory-rules-for-ai-agents)). Only run them when the user explicitly asks.
+These are for the **user**, and for agents running a requested build through `scripts/bugsanitizer/run.sh` (see [Mandatory rules](#mandatory-rules-for-ai-agents)). Only run them when the user explicitly asks.
 
 All Gradle commands require the environment variables set above. Export them before invoking `./gradlew` if running in a fresh shell:
 
