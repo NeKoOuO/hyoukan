@@ -311,6 +311,28 @@ internal fun WebGpuViewer.startProgressSpinner() {
 }
 
 /**
+ * KMK --> Releases every decoded page while the device they were uploaded to is still alive.
+ *
+ * The renderer's swapchain ladder replaces the GPU device behind a wedged surface. The decoded
+ * images and their mip textures are app-side, so the library cannot drop them; this runs from the
+ * `DeviceRebuildListener` before the device is retired, and the recovered listener rebuilds the
+ * working set on the new device. Without it a frame between the rebuild and that reset would
+ * record against handles from the retired device.
+ * KMK <--
+ */
+internal fun WebGpuViewer.dropDeviceBoundPagesBeforeRebuild() {
+    try {
+        ProgressPage.destroyPineappleTexture()
+    } catch (_: Exception) {
+    }
+    synchronized(lock) {
+        if (isDestroyed) return
+        decodeQueue.clear()
+        releaseAllShellsAndClearResidency()
+    }
+}
+
+/**
  * Tears down everything a GPU device loss invalidated and rebuilds the shells around the page the
  * reader is on.
  *

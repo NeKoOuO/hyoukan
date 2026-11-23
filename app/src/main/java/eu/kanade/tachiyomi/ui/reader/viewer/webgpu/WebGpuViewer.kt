@@ -715,6 +715,21 @@ open class WebGpuViewer(
     // KMK <--
 
     /**
+     * KMK --> Runs before the renderer replaces the device behind a wedged swapchain.
+     *
+     * The library's swapchain ladder drops its own tile caches through the same hook, but the
+     * decoded pages are app-side: their GPU textures belong to the device that is about to be
+     * retired, and a frame that slips in between the rebuild and `resetDecodedPagesAfterDeviceLoss`
+     * would draw those handles on the new device. Release them first, while the old device is
+     * still the one they were created on; the recovered listener rebuilds the working set.
+     * KMK <--
+     */
+    private val deviceRebuildListener =
+        WebGpuRenderer.Companion.DeviceRebuildListener {
+            dropDeviceBoundPagesBeforeRebuild()
+        }
+
+    /**
      * Rebuild the GPU device, retrying a bounded number of times before giving up.
      *
      * A loss on a phone is usually the app being backgrounded and the driver tearing the device
@@ -768,6 +783,12 @@ open class WebGpuViewer(
         try {
             ca.mpreg.webgpuviewer.renderer.WebGpuRenderer.addDeviceRecoveredListener(deviceRecoveredListener)
         } catch (_: Exception) {}
+        // KMK --> The swapchain ladder's device/backend rebuild must drop app-side decoded pages
+        // before it retires the device they live on.
+        try {
+            WebGpuRenderer.addDeviceRebuildListener(deviceRebuildListener)
+        } catch (_: Exception) {}
+        // KMK <--
         // KMK --> Populates the decode path's extension compartments before the worker that consumes
         // them starts. Installing here rather than lazily means no page can decode through a chain
         // that is missing its upscaler, and install-by-id makes a second viewer's call a no-op.
@@ -1179,6 +1200,10 @@ open class WebGpuViewer(
         try {
             ca.mpreg.webgpuviewer.renderer.WebGpuRenderer.removeDeviceRecoveredListener(deviceRecoveredListener)
         } catch (_: Exception) {}
+        // KMK -->
+        try {
+            WebGpuRenderer.removeDeviceRebuildListener(deviceRebuildListener)
+        } catch (_: Exception) {}
         // KMK <--
         try {
             scope.cancel()
@@ -1210,6 +1235,21 @@ open class WebGpuViewer(
                 lock.notifyAll()
             } catch (_: Exception) {
             }
+        }
+        // KMK --> Close the render surface here, not in the composition's disposal callback.
+        //
+        // The pages above are released while the device is still alive, which is the ordering the
+        // Activity's onDestroy comment depends on. The surface belongs here for the same reason:
+        // the next reader session builds a fresh TextureView/BufferQueue on the same driver, and a
+        // teardown that is still running when that happens has produced a swapchain that is wedged
+        // from its very first `getCurrentTexture` (see the renderer's SwapchainRecoveryPolicy).
+        // Doing it explicitly makes the ordering independent of when Compose gets round to
+        // disposing the composition. The later state.cleanup() from the surface callback is a
+        // no-op for everything already released.
+        // KMK <--
+        try {
+            pager.state.cleanup()
+        } catch (_: Exception) {
         }
     }
 

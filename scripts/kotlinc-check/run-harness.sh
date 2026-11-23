@@ -227,6 +227,9 @@ for MAIN in "$HARNESS_DIR"/*Harness.kt; do
             # The provider's gate order, including that the renderer is not probed after an
             # earlier gate has already declined.
             SOURCES+=("$WEBGPU_DIR/WebGpuOffer.kt" "$WEBGPU_DIR/WebGpuHealthPolicy.kt") ;;
+        SwapchainRecoveryHarness)
+            # The surface-recovery ladder's order and boundaries. Pure, so the real table is linked.
+            SOURCES+=("$REPO_ROOT/external/webgpuviewer-houri/library/src/main/java/ca/mpreg/webgpuviewer/renderer/SwapchainRecoveryPolicy.kt") ;;
         DiagnosticsHarness)
             # The recorder's own facades are stubbed, so the run writes nothing.
             SOURCES+=("$WEBGPU_DIR/WebGpuDiagnostics.kt")
