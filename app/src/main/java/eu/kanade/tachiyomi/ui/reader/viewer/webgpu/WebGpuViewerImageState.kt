@@ -184,7 +184,10 @@ internal fun WebGpuViewer.applyImageState() {
         synchronized(lock) {
             pageCache.values.forEach {
                 (it.imagePage as? ImagePage.ImageSingle)?.let { single ->
-                    if (!single.isAnimated) single.highQuality = !fast
+                    if (!single.isAnimated) {
+                        single.highQuality = !fast &&
+                            ca.mpreg.webgpuviewer.renderer.WebGpuRenderer.tileCacheUsable
+                    }
                 }
             }
         }

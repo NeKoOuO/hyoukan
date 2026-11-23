@@ -263,6 +263,10 @@ internal fun WebGpuViewer.resolveFetchedPage(index: Int): ImagePage? {
     // happens to be on when the session ends: a chapter transition at exit is not a dead display.
     if (index == 0 && !WebGpuDiagnostics.anyPageDrawn() && current.imagePage.isOnScreen) {
         WebGpuDiagnostics.recordPageDrawn()
+        // KMK --> The first drawn page's geometry, so a session that presents frames and still
+        // shows nothing can be told apart from one whose page was never placed on the surface.
+        WebGpuDiagnostics.recordDrawnPage(describeDrawnPage(current))
+        // KMK <--
     }
     // KMK <--
 
@@ -810,6 +814,19 @@ internal fun WebGpuViewer.pageDistance(anchor: ViewerPage, page: ViewerPage): In
     is ViewerReaderPage -> pageDistance(anchor, page)
     is ViewerTransitionPage -> pageDistance(anchor, page)
     else -> null
+}
+
+/**
+ * KMK --> The first on-screen page, with the facts that decide whether it could be seen. The
+ * session report carries this because "frames were presented" and "an image was visible" are
+ * different claims: the 2026-11-23 PowerVR dump has `frames=139` and a black screen.
+ * KMK <--
+ */
+private fun describeDrawnPage(page: ViewerPage): String {
+    val single = page.imagePage as? ImagePage.ImageSingle
+    return "key=${page.key} img=${single?.width}x${single?.height} " +
+        "scale=${single?.scale} x=${single?.x} y=${single?.y} home=${single?.homeScale} " +
+        "mips=${single?.image?.mipmaps?.size} q=${single?.highQuality}"
 }
 // KMK <--
 // Mihon <--

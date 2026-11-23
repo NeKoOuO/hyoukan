@@ -106,6 +106,16 @@ internal object WebGpuDiagnostics {
     private var pageDrawn: Boolean = false
 
     /**
+     * KMK --> The first page the render walk actually put on screen, with the facts that decide
+     * whether it could be seen: image size, scale, position, home scale, mip count and tile
+     * quality. Recorded once per session, with [recordPageDrawn], because the interesting case is
+     * a session whose first drawn page never became visible - later pages only add noise.
+     * KMK <--
+     */
+    @Volatile
+    private var drawnPage: String = "none"
+
+    /**
      * Frames the renderer actually presented this session, recorded once at close.
      *
      * Distinct from [pageDrawn] on purpose: that flag is set by the render walk before a frame is
@@ -178,6 +188,12 @@ internal object WebGpuDiagnostics {
     fun recordPageDrawn() {
         pageDrawn = true
     }
+
+    /** KMK --> The first drawn page's geometry/quality, for the session report. */
+    fun recordDrawnPage(description: String) {
+        drawnPage = description
+    }
+    // KMK <--
 
     /**
      * Records how many frames the renderer actually presented this session.
@@ -275,6 +291,7 @@ internal object WebGpuDiagnostics {
                 failedRecoveries = failedRecoveries,
                 parks = parks,
                 pageDrawn = pageDrawn,
+                drawnPage = drawnPage,
                 presentedFrames = presentedFrames,
                 ladder = ladder.toMap(),
                 budgets = budgets.toList(),
@@ -296,6 +313,7 @@ internal object WebGpuDiagnostics {
                     "evictions=${snapshot.evictions} worstChurn=${snapshot.worstChurn} " +
                     "drawn=${snapshot.pageDrawn} frames=${snapshot.presentedFrames}",
             )
+            appendLine("  page=${snapshot.drawnPage}")
             appendLine(
                 "  deviceLosses=${snapshot.deviceLosses} recoveries=${snapshot.recoveries} " +
                     "failedRecoveries=${snapshot.failedRecoveries} parks=${snapshot.parks}",
@@ -364,6 +382,7 @@ internal object WebGpuDiagnostics {
         val failedRecoveries: Int,
         val parks: Int,
         val pageDrawn: Boolean,
+        val drawnPage: String,
         val presentedFrames: Int,
         val ladder: Map<String, Int>,
         val budgets: List<String>,

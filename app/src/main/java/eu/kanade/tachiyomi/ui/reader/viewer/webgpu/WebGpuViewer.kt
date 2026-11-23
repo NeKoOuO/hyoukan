@@ -811,7 +811,9 @@ open class WebGpuViewer(
             "tier=${memoryBudget.deviceTier} budget=${memoryBudget.describe()} " +
                 "preload=${config.preloadAhead}/${config.preloadBehind} workers=${decodeParallelism()} " +
                 "continuous=$continuousHeader dual=${if (continuousHeader) false else isDualPageMode()} " +
-                "gpu=${WebGpuRenderer.adapterDescription}"
+                "gpu=${WebGpuRenderer.adapterDescription} " +
+                "tiles=${WebGpuRenderer.tileCacheUsable} " +
+                "filter=${readerPreferences.grayscale().get()}/${readerPreferences.invertedColors().get()}"
         logcat(LogPriority.INFO) { "WebGPU session: $sessionHeader" }
         WebGpuDiagnostics.beginSession(sessionHeader)
         // KMK <--

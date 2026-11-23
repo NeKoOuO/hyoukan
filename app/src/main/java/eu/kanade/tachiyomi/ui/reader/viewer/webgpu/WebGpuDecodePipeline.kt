@@ -763,7 +763,12 @@ internal suspend fun WebGpuViewer.decodeReaderPage(page: ViewerReaderPage, trace
                 val decodedSingle = page.imagePage as? ImagePage.ImageSingle
                 if (decodedSingle != null) {
                     // KMK -->
-                    if (!decodedSingle.isAnimated) decodedSingle.highQuality = !config.fastRender
+                    // A device whose tile path presents as a black page uses the direct draw
+                    // for the whole session; see WebGpuRenderer.tileCacheUsable.
+                    if (!decodedSingle.isAnimated) {
+                        decodedSingle.highQuality = !config.fastRender &&
+                            ca.mpreg.webgpuviewer.renderer.WebGpuRenderer.tileCacheUsable
+                    }
                     applyZoomPolicy(decodedSingle)
                     // KMK <--
                     // KMK --> What this page now costs, so the byte budget is a measurement

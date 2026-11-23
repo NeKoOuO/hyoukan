@@ -125,8 +125,8 @@ import eu.kanade.tachiyomi.ui.reader.viewer.novel.NovelTypographyCss
 import eu.kanade.tachiyomi.ui.reader.viewer.novel.NovelWebViewer
 import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerConfig
 import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerViewer
-import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.WebGpuHealth
 import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.WebGpuViewer
+import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.WebGpuHealth
 import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.isDualPageMode
 import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.refreshSpreads
 import eu.kanade.tachiyomi.ui.webview.WebViewActivity
@@ -2037,6 +2037,17 @@ class ReaderActivity : BaseActivity() {
                 }
                 .launchIn(lifecycleScope)
 
+            // KMK --> The layer decision depends on which viewer is live as well as on the filter:
+            // a TextureView (the WebGPU surface below API 34) inside an ancestor hardware layer
+            // has presented as a black frame on PowerVR-class HWUI. Re-apply when the viewer
+            // changes, not only when the filter preference does.
+            viewModel.state
+                .map { it.viewer is WebGpuViewer }
+                .distinctUntilChanged()
+                .onEach { applyLayerPaint() }
+                .launchIn(lifecycleScope)
+            // KMK <--
+
             combine(
                 readerPreferences.fullscreen().changes(),
                 readerPreferences.drawUnderCutout().changes(),
@@ -2154,20 +2165,37 @@ class ReaderActivity : BaseActivity() {
 
             viewModel.setBrightnessOverlayValue(value)
         }
+        private var lastGrayscale = false
+        private var lastInvertedColors = false
+
         private fun setLayerPaint(grayscale: Boolean, invertedColors: Boolean) {
-            val paint = if (grayscale || invertedColors) getCombinedPaint(grayscale, invertedColors) else null
+            lastGrayscale = grayscale
+            lastInvertedColors = invertedColors
+            applyLayerPaint()
+        }
+
+        private fun applyLayerPaint() {
+            val paint = if (lastGrayscale || lastInvertedColors) {
+                getCombinedPaint(lastGrayscale, lastInvertedColors)
+            } else {
+                null
+            }
             // KMK --> The hardware layer exists to carry the colour-filter paint. Setting one with
             // no paint buys nothing and costs a full-screen offscreen texture for every reader -
             // GPU memory the WebGPU page budget does not know about, on the very devices where it
             // is tightest - and a TextureView (the WebGPU surface below API 34) composited through
             // an ancestor layer is an extra hop that has presented as a black frame on some
             // drivers. Leave the default layer type unless a filter is actually on, and clear a
-            // layer left by a previous filter when it is turned off again.
+            // layer left by a previous filter when it is turned off again. The WebGPU viewer
+            // applies its own GPU filters, so the container paint is skipped for it outright.
             // KMK <--
-            binding.viewerContainer.setLayerType(
-                if (paint != null) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE,
-                paint,
-            )
+            val webGpu = viewModel.state.value.viewer is WebGpuViewer
+            val layer = if (!webGpu && paint != null) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE
+            binding.viewerContainer.setLayerType(layer, if (webGpu) null else paint)
+            logcat(LogPriority.INFO) {
+                "Reader layer: webgpu=$webGpu filter=(gray=$lastGrayscale invert=$lastInvertedColors) " +
+                    "layer=$layer"
+            }
         }
     }
 
