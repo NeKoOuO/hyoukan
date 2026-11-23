@@ -314,6 +314,12 @@ internal object WebGpuDiagnostics {
                     "drawn=${snapshot.pageDrawn} frames=${snapshot.presentedFrames}",
             )
             appendLine("  page=${snapshot.drawnPage}")
+            // KMK --> What the newest encoded frame asked the page path to draw. `pages=0` with
+            // frames presented is the "renderer ran, page path never reached a page" shape;
+            // `quads=0` with pages>0 is a page whose image had no mipmaps; `rect=` names where the
+            // quad landed in normalised surface coordinates.
+            appendLine("  draw=${ca.mpreg.webgpuviewer.viewer.RenderProbe.summary()}")
+            // KMK <--
             appendLine(
                 "  deviceLosses=${snapshot.deviceLosses} recoveries=${snapshot.recoveries} " +
                     "failedRecoveries=${snapshot.failedRecoveries} parks=${snapshot.parks}",
@@ -336,7 +342,8 @@ internal object WebGpuDiagnostics {
     fun isNotable(): Boolean = synchronized(this) {
         deviceLosses > 0 || failedRecoveries > 0 || parks > 0 ||
             downsampledCount > 0 || stallCount > 0 || worstChurn() >= 3 ||
-            (ladder[STUCK_GIVE_UP] ?: 0) > 0
+            (ladder[STUCK_GIVE_UP] ?: 0) > 0 ||
+            (presentedFrames > 0 && ca.mpreg.webgpuviewer.viewer.RenderProbe.pages == 0)
     }
 
     private const val STUCK_GIVE_UP = "GIVE_UP"

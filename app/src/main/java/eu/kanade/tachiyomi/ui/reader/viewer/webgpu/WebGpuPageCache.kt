@@ -261,11 +261,19 @@ internal fun WebGpuViewer.resolveFetchedPage(index: Int): ImagePage? {
     // second frame of a session is the earliest this can answer true - and every frame after it
     // is a fresh chance. The close-out's black-screen strike asks this, never the page the reader
     // happens to be on when the session ends: a chapter transition at exit is not a dead display.
-    if (index == 0 && !WebGpuDiagnostics.anyPageDrawn() && current.imagePage.isOnScreen) {
-        WebGpuDiagnostics.recordPageDrawn()
-        // KMK --> The first drawn page's geometry, so a session that presents frames and still
-        // shows nothing can be told apart from one whose page was never placed on the surface.
-        WebGpuDiagnostics.recordDrawnPage(describeDrawnPage(current))
+    if (index == 0 && current.imagePage.isOnScreen) {
+        if (!WebGpuDiagnostics.anyPageDrawn()) {
+            WebGpuDiagnostics.recordPageDrawn()
+            // KMK --> The first on-screen frame may still be the placeholder; record it so a
+            // session that never adopts an image has a page= line too.
+            WebGpuDiagnostics.recordDrawnPage(describeDrawnPage(current))
+            // KMK <--
+        }
+        // KMK --> Once the image itself is on screen, its geometry replaces the placeholder
+        // record - the session report must describe what was drawn, not the spinner.
+        if (current.imagePage is ImagePage.ImageSingle) {
+            WebGpuDiagnostics.recordDrawnPage(describeDrawnPage(current))
+        }
         // KMK <--
     }
     // KMK <--
@@ -826,7 +834,9 @@ private fun describeDrawnPage(page: ViewerPage): String {
     val single = page.imagePage as? ImagePage.ImageSingle
     return "key=${page.key} img=${single?.width}x${single?.height} " +
         "scale=${single?.scale} x=${single?.x} y=${single?.y} home=${single?.homeScale} " +
-        "mips=${single?.image?.mipmaps?.size} q=${single?.highQuality}"
+        "trim=${single?.trimWidth}x${single?.trimHeight} " +
+        "mips=${single?.image?.mipmaps?.size} fmt=${single?.image?.mipmaps?.firstOrNull()?.format} " +
+        "q=${single?.highQuality}"
 }
 // KMK <--
 // Mihon <--

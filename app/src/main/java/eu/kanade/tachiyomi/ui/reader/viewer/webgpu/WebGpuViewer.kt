@@ -813,7 +813,11 @@ open class WebGpuViewer(
                 "continuous=$continuousHeader dual=${if (continuousHeader) false else isDualPageMode()} " +
                 "gpu=${WebGpuRenderer.adapterDescription} " +
                 "tiles=${WebGpuRenderer.tileCacheUsable} " +
-                "filter=${readerPreferences.grayscale().get()}/${readerPreferences.invertedColors().get()}"
+                "surface=${pager.state.renderer.debugSummary} " +
+                "filter=${readerPreferences.grayscale().get()}/${readerPreferences.invertedColors().get()} " +
+                "filters=dark=${config.webgpuDarkMode} bright=${config.brightness} " +
+                "contrast=${config.contrast} eink=${config.einkPreset} " +
+                "hlg=${config.hlgEnabled} lut=${config.lutPreset}"
         logcat(LogPriority.INFO) { "WebGPU session: $sessionHeader" }
         WebGpuDiagnostics.beginSession(sessionHeader)
         // KMK <--
