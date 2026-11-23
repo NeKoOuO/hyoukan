@@ -318,7 +318,9 @@ internal object WebGpuDiagnostics {
             // frames presented is the "renderer ran, page path never reached a page" shape;
             // `quads=0` with pages>0 is a page whose image had no mipmaps; `rect=` names where the
             // quad landed in normalised surface coordinates.
-            appendLine("  draw=${ca.mpreg.webgpuviewer.viewer.RenderProbe.summary()}")
+            appendLine(
+                "  draw=${ca.mpreg.webgpuviewer.viewer.RenderProbe.summary()}",
+            )
             // KMK <--
             appendLine(
                 "  deviceLosses=${snapshot.deviceLosses} recoveries=${snapshot.recoveries} " +

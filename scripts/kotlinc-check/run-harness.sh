@@ -233,6 +233,7 @@ for MAIN in "$HARNESS_DIR"/*Harness.kt; do
         DiagnosticsHarness)
             # The recorder's own facades are stubbed, so the run writes nothing.
             SOURCES+=("$WEBGPU_DIR/WebGpuDiagnostics.kt")
+            SOURCES+=("$REPO_ROOT/scripts/kotlinc-check/stubs/RenderProbe.kt")
             SOURCES+=("$REPO_ROOT/scripts/kotlinc-check/stubs/logcat/LogPriority.kt")
             SOURCES+=("$REPO_ROOT/scripts/kotlinc-check/stubs/tachiyomi/core/common/util/system/LogcatStub.kt")
             SOURCES+=("$REPO_ROOT/scripts/kotlinc-check/stubs/exh/log/XLogStub.kt") ;;
