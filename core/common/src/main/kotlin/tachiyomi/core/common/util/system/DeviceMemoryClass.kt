@@ -59,7 +59,7 @@ enum class DeviceTier(
      * keeps a high-resolution comic's page (a 4000x6000 scan is 24MP / 128MB of GPU textures before
      * its mip chain) from being a one-page device loss.
      */
-    TINY(96L * MEMORY_MB, 16L * MEMORY_MB, 24L * MEMORY_MB, 12L * MEMORY_MB, 6L * 1_000_000),
+    TINY(96L * MEMORY_MB, 16L * MEMORY_MB, 24L * MEMORY_MB, 12L * MEMORY_MB, 3L * 1_000_000),
 
     /** 2-3GB - the old `isLowRamDevice` boundary. */
     SMALL(160L * MEMORY_MB, 24L * MEMORY_MB, 40L * MEMORY_MB, 16L * MEMORY_MB, 10L * 1_000_000),
