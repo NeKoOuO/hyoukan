@@ -90,4 +90,12 @@ include(":yakuyomi")
 include(":yakuyomi-stub")
 project(":yakuyomi").projectDir = file("yakuyomi-engine")
 includeBuild("external/yakuyomi-engine")
-includeBuild("external/webgpuviewer-houri")
+// KMK --> Pin the WebGPU viewer to the fork in external/, never the published ca.mpreg artifact.
+// The library's coordinates (`ca.mpreg:webgpuviewer:0.0.0`) match [app]'s dependency, so Gradle's
+// default composite substitution already applies - this makes it explicit so a version bump in
+// either place cannot silently resolve mpreg's Maven copy instead of this fork.
+includeBuild("external/webgpuviewer-houri") {
+    dependencySubstitution {
+        substitute(module("ca.mpreg:webgpuviewer")).using(project(":webgpuviewer"))
+    }
+}
